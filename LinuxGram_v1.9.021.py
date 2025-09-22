@@ -2915,13 +2915,6 @@ async def change_folder():
 async def main():
     global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH
     
-    # Проверка обновлений при запуске
-    print("Проверка обновлений...")
-    try:
-        await check_for_updates()
-    except Exception as e:
-        print(f"Ошибка при проверке обновлений: {e}")
-    
     # Проверка на значения по умолчанию
     if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
         print("⚠️  Обнаружены значения API по умолчанию!")
@@ -2958,6 +2951,14 @@ async def main():
     # Загружаем конфиг
     config = load_config()
     folders = load_folders()
+    
+    # Проверка обновлений при запуске (только если не в режиме разработки)
+    if not os.path.exists("DEV_MODE"):
+        print("Проверка обновлений...")
+        try:
+            await check_for_updates()
+        except Exception as e:
+            print(f"Ошибка при проверке обновлений: {e}")
     
     # Инициализируем клиента с проверкой прокси
     await initialize_client()
