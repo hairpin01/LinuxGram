@@ -126,6 +126,15 @@ client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 # Создаем папку для загрузок
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
+def update_config(loaded_config, default_config):
+    """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
+    for key, value in default_config.items():
+        if key not in loaded_config:
+            loaded_config[key] = value
+        elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
+            loaded_config[key] = update_config(loaded_config[key], value)
+    return loaded_config
+
 # Загрузка конфигурации
 def load_config():
     default_config = {
@@ -312,15 +321,6 @@ class LinuxGramUI:
             return update_config(loaded_config, default_config)
     except FileNotFoundError:
         return default_config
-
-def update_config(loaded_config, default_config):
-    """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
-    for key, value in default_config.items():
-        if key not in loaded_config:
-            loaded_config[key] = value
-        elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
-            loaded_config[key] = update_config(loaded_config[key], value)
-    return loaded_config
 
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
