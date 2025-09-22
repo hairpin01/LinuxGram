@@ -28,7 +28,8 @@ the console version of Telegram
 
 1. Клонируйте репозиторий && установка зависимостей
    ```bash
-   git clone https://github.com/hairpin01/LinuxGram.git && cd LinuxGram && pip install -r requirements.txt```
+   git clone https://github.com/hairpin01/LinuxGram.git && cd LinuxGram && pip install -r requirements.txt
+   ```
 
 3. Получите API-ключи
    · Посетите my.telegram.org
