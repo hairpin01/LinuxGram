@@ -279,21 +279,41 @@ async def check_for_updates():
             
             # Добавляем случайный параметр для избежания кеширования
             timestamp = int(time.time())
-            async with session.get(f"{version_url}?t={timestamp}", timeout=10) as response:
+            full_url = f"{version_url}?t={timestamp}"
+            print(f"Запрос обновления по URL: {full_url}")
+            
+            async with session.get(full_url, timeout=10) as response:
+                print(f"Статус ответа: {response.status}")
                 if response.status == 200:
                     latest_version = (await response.text()).strip()
+                    print(f"Получена версия из репозитория: '{latest_version}'")
+                    print(f"Текущая версия программы: '{VERSION}'")
+                    
+                    # Функция для сравнения версий
+                    def version_tuple(version_str):
+                        # Обрабатываем версии с разным количеством компонентов
+                        parts = version_str.split('.')
+                        # Заполняем нулями недостающие компоненты
+                        while len(parts) < 3:
+                            parts.append('0')
+                        return tuple(map(int, parts))
                     
                     # Сравниваем версии
-                    if latest_version > VERSION:
+                    current_tuple = version_tuple(VERSION)
+                    latest_tuple = version_tuple(latest_version)
+                    print(f"Текущая версия (кортеж): {current_tuple}")
+                    print(f"Последняя версия (кортеж): {latest_tuple}")
+                    
+                    if latest_tuple > current_tuple:
                         print(f"\n⚠️ Доступно обновление {latest_version}! Текущая версия: {VERSION}")
-                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram.git")
+                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/")
                         print("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n")
                         return True
                     else:
                         print(f"✅ У вас актуальная версия {VERSION}")
                         return False
                 else:
-                    print("Не удалось проверить обновления (ошибка сервера)")
+                    print(f"Не удалось проверить обновления (ошибка сервера: {response.status})")
                     return False
     except asyncio.TimeoutError:
         print("Таймаут при проверке обновлений")
