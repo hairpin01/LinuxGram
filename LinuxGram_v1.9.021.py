@@ -107,7 +107,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.019"
+VERSION = "1.9.021"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -269,6 +269,32 @@ def print_header(title):
     print("=" * 80)
     print(f"LinuxGram, версия: {VERSION}. - {title}")
     print("=" * 80)
+
+async def check_for_updates():
+    """Проверяет наличие обновлений на GitHub"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Получаем информацию о последнем релизе из GitHub API
+            async with session.get('https://api.github.com/repos/hairpin01/LinuxGram/releases/latest') as response:
+                if response.status == 200:
+                    release_info = await response.json()
+                    latest_version = release_info['tag_name'].replace('v', '')
+                    
+                    # Сравниваем версии
+                    if latest_version > VERSION:
+                        print(f"\n⚠️ Доступно обновление {latest_version}! Текущая версия: {VERSION}")
+                        print(f"Что нового: {release_info.get('body', 'Нет информации')}")
+                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/releases/latest")
+                        print("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n")
+                        return True
+                    else:
+                        print(f"✅ У вас актуальная версия {VERSION}")
+                else:
+                    print("Не удалось проверить обновления (ошибка сервера)")
+    except Exception as e:
+        print(f"Ошибка при проверке обновлений: {e}")
+    
+    return False
 
 async def get_chat_info(dialog):
     """Получает информацию о чате/канале"""
@@ -2337,7 +2363,8 @@ async def show_settings():
         print("5. Язык")
         print("6. Настройки аккаунта")
         print("7. Ночной режим")
-        print("8. Настройки прокси")  # Новый пункт
+        print("8. Настройки прокси")
+        print("9. Проверить обновления")  # Новый пункт
         print("0. Назад")
         
         choice = input("\nВыберите раздел настроек: ")
@@ -2359,8 +2386,11 @@ async def show_settings():
             save_config(config)
             status = "включен" if config["auto_night_mode"] else "выключен"
             print(f"Автономный ночной режим {status}!")
-        elif choice == '8':  # Новый пункт для прокси
+        elif choice == '8':
             await show_proxy_settings()
+        elif choice == '9':  # Новый пункт для проверки обновлений
+            await check_for_updates()
+            input("\nНажмите Enter для продолжения...")
         elif choice == '0':
             break
         else:
@@ -2871,6 +2901,13 @@ async def change_folder():
 
 async def main():
     global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH
+    
+    # Проверка обновлений при запуске
+    print("Проверка обновлений...")
+    try:
+        await check_for_updates()
+    except Exception as e:
+        print(f"Ошибка при проверке обновлений: {e}")
     
     # Проверка на значения по умолчанию
     if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
