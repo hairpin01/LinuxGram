@@ -126,16 +126,6 @@ client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 # Создаем папку для загрузок
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-def update_config(loaded_config, default_config):
-    """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
-    for key, value in default_config.items():
-        if key not in loaded_config:
-            loaded_config[key] = value
-        elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
-            loaded_config[key] = update_config(loaded_config[key], value)
-    return loaded_config
-
-# Загрузка конфигурации
 def load_config():
     default_config = {
         "privacy": {
@@ -182,6 +172,23 @@ def load_config():
             "password": ""
         }
     }
+
+    def update_config(loaded_config, default_config):
+        """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
+        for key, value in default_config.items():
+            if key not in loaded_config:
+                loaded_config[key] = value
+            elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
+                loaded_config[key] = update_config(loaded_config[key], value)
+        return loaded_config
+
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            loaded_config = json.load(f)
+            # Обновляем конфиг, добавляя отсутствующие ключи
+            return update_config(loaded_config, default_config)
+    except FileNotFoundError:
+        return default_config
 
 class ColorTheme:
     def __init__(self, is_dark=True):
