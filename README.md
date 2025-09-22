@@ -32,7 +32,7 @@ This is not an official telegram client that works in the terminal
    ```
 
 3. Получите API-ключи
-   · Посетите my.telegram.org
+   · Зайдите на my.telegram.org
    · Создайте новое приложение
    · Скопируйте API ID и API Hash
 4. Настройте приложение
