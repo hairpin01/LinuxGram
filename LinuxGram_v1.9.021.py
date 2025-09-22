@@ -6,9 +6,9 @@ import random
 import re
 import aiohttp
 import math
+import asyncio
+import aiohttp
 import time
-import curses
-import psutil
 from urllib.parse import urlparse
 from datetime import datetime
 from telethon import TelegramClient, events, functions, types
@@ -107,7 +107,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.234"
+VERSION = "1.9.021"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -126,6 +126,7 @@ client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 # Создаем папку для загрузок
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
+# Загрузка конфигурации
 def load_config():
     default_config = {
         "privacy": {
@@ -172,16 +173,7 @@ def load_config():
             "password": ""
         }
     }
-
-    def update_config(loaded_config, default_config):
-        """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
-        for key, value in default_config.items():
-            if key not in loaded_config:
-                loaded_config[key] = value
-            elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
-                loaded_config[key] = update_config(loaded_config[key], value)
-        return loaded_config
-
+    
     try:
         with open(CONFIG_FILE, 'r') as f:
             loaded_config = json.load(f)
@@ -190,144 +182,14 @@ def load_config():
     except FileNotFoundError:
         return default_config
 
-class ColorTheme:
-    def __init__(self, is_dark=True):
-        self.is_dark = is_dark
-        self.colors = {}
-        self.init_colors()
-    
-    def init_colors(self):
-        if self.is_dark:
-            # Тёмная тема
-            self.colors = {
-                'background': curses.COLOR_BLACK,
-                'text': curses.COLOR_WHITE,
-                'header': curses.COLOR_CYAN,
-                'highlight': curses.COLOR_YELLOW,
-                'error': curses.COLOR_RED,
-                'success': curses.COLOR_GREEN,
-                'warning': curses.COLOR_MAGENTA,
-                'status': curses.COLOR_BLUE,
-                'unread': curses.COLOR_RED,
-                'online': curses.COLOR_GREEN,
-                'offline': curses.COLOR_WHITE
-            }
-        else:
-            # Светлая тема
-            self.colors = {
-                'background': curses.COLOR_WHITE,
-                'text': curses.COLOR_BLACK,
-                'header': curses.COLOR_BLUE,
-                'highlight': curses.COLOR_MAGENTA,
-                'error': curses.COLOR_RED,
-                'success': curses.COLOR_GREEN,
-                'warning': curses.COLOR_YELLOW,
-                'status': curses.COLOR_CYAN,
-                'unread': curses.COLOR_RED,
-                'online': curses.COLOR_GREEN,
-                'offline': curses.COLOR_BLACK
-            }
-
-def get_color(self, color_name):
-        return self.colors.get(color_name, curses.COLOR_WHITE)
-
-class LinuxGramUI:
-    def __init__(self, stdscr):
-        self.stdscr = stdscr
-        self.theme = ColorTheme(config["appearance"]["theme"] == "тёмная")
-        self.init_curses()
-        
-    def init_curses(self):
-        curses.curs_set(0)  # Скрываем курсор
-        curses.start_color()
-        curses.use_default_colors()
-        
-        # Инициализируем цветовые пары
-        for i, (name, color) in enumerate(self.theme.colors.items(), start=1):
-            curses.init_pair(i, color, self.theme.get_color('background'))
-    
-    def get_color_pair(self, color_name):
-        return curses.color_pair(list(self.theme.colors.keys()).index(color_name) + 1)
-    
-    def clear_screen(self):
-        self.stdscr.clear()
-    
-    def print_centered(self, y, text, color_pair=None):
-        if color_pair is None:
-            color_pair = self.get_color_pair('text')
-        x = max(0, (curses.COLS - len(text)) // 2)
-        self.stdscr.addstr(y, x, text, color_pair)
-    
-    def print_status_bar(self, connection_status="Online", battery_percent=None):
-        status_height = 1
-        status_y = curses.LINES - status_height
-        
-        # Очищаем строку статуса
-        self.stdscr.addstr(status_y, 0, " " * curses.COLS, self.get_color_pair('status'))
-        
-        # Время
-        time_str = datetime.now().strftime("%H:%M:%S")
-        self.stdscr.addstr(status_y, 0, time_str, self.get_color_pair('status'))
-        
-        # Статус соединения
-        conn_text = f" {connection_status} "
-        self.stdscr.addstr(status_y, len(time_str) + 1, conn_text, 
-                          self.get_color_pair('online' if connection_status == "Online" else 'error'))
-        
-        # Батарея
-        if battery_percent is not None:
-            batt_text = f" Battery: {battery_percent}% "
-            batt_x = curses.COLS - len(batt_text) - 1
-            self.stdscr.addstr(status_y, batt_x, batt_text, self.get_color_pair('status'))
-            
-            # Индикатор батареи
-            if battery_percent > 70:
-                batt_color = 'success'
-            elif battery_percent > 30:
-                batt_color = 'warning'
-            else:
-                batt_color = 'error'
-            
-            batt_indicator = "[" + "|" * (battery_percent // 10) + " " * (10 - battery_percent // 10) + "]"
-            self.stdscr.addstr(status_y, batt_x - 12, batt_indicator, self.get_color_pair(batt_color))
-    
-    def print_header(self, title):
-        self.clear_screen()
-        header_height = 3
-        
-        # Верхняя граница
-        self.stdscr.addstr(0, 0, "=" * curses.COLS, self.get_color_pair('header'))
-        
-        # Заголовок
-        title_text = f"LinuxGram, версия: {VERSION}. - {title}"
-        self.print_centered(1, title_text, self.get_color_pair('header'))
-        
-        # Нижняя граница заголовка
-        self.stdscr.addstr(2, 0, "=" * curses.COLS, self.get_color_pair('header'))
-        
-        return header_height
-    
-    def create_menu(self, items, start_y, selected_idx=0):
-        for i, item in enumerate(items):
-            color = self.get_color_pair('highlight') if i == selected_idx else self.get_color_pair('text')
-            self.stdscr.addstr(start_y + i, 2, item, color)
-    
-    def get_battery_info(self):
-        try:
-            battery = psutil.sensors_battery()
-            if battery:
-                return int(battery.percent), battery.power_plugged
-        except:
-            pass
-        return None, None
-
-    try:
-        with open(CONFIG_FILE, 'r') as f:
-            loaded_config = json.load(f)
-            # Обновляем конфиг, добавляя отсутствующие ключи
-            return update_config(loaded_config, default_config)
-    except FileNotFoundError:
-        return default_config
+def update_config(loaded_config, default_config):
+    """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
+    for key, value in default_config.items():
+        if key not in loaded_config:
+            loaded_config[key] = value
+        elif isinstance(value, dict) and isinstance(loaded_config[key], dict):
+            loaded_config[key] = update_config(loaded_config[key], value)
+    return loaded_config
 
 def save_config(config):
     with open(CONFIG_FILE, 'w') as f:
@@ -504,11 +366,11 @@ async def get_user_status(user):
     else:
         return "неизвестно"
 
-async def show_dialogs(ui):
+async def show_dialogs():
     global show_archived, current_folder, folders
     
     dialogs = await client.get_dialogs()
-    height = ui.print_header(f"Ваши диалоги - Папка: {current_folder}")
+    print_header(f"Ваши диалоги - Папка: {current_folder}")
     
     # Показываем доступные папки
     print("Папки:")
@@ -605,10 +467,6 @@ async def show_dialogs(ui):
     print("c. Создать группу/канал")
     print("m. Управление папками")
     print("f. Сменить папку")
-    battery_percent, _ = ui.get_battery_info()
-    ui.print_status_bar("Online", battery_percent)
-    
-    ui.stdscr.refresh()
     return filtered_dialogs
 
 async def get_sender_name(sender):
@@ -926,10 +784,6 @@ async def show_user_profile(user, dialog=None):
         print(f"Ошибка при получении информации о пользователе: {e}")
         input("\nНажмите Enter для возврата...")
     
-    battery_percent, _ = ui.get_battery_info()
-    ui.print_status_bar("Online", battery_percent)
-    
-    ui.stdscr.refresh()
     return "back"
 
 async def show_participants(dialog):
@@ -3078,11 +2932,8 @@ async def change_folder():
     
     input("\nНажмите Enter для продолжения...")
 
-async def main(stdscr):
+async def main():
     global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH
-    
-    # Инициализируем UI
-    ui = LinuxGramUI(stdscr)
     
     # Проверка на значения по умолчанию
     if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
@@ -3174,9 +3025,6 @@ async def main(stdscr):
         try:
             selected_dialog = dialogs[int(choice)-1]
             current_dialog = selected_dialog
-
-            while True:
-              dialogs = await show_dialogs(ui)
             
             while True:
                 await show_messages(selected_dialog)
@@ -3413,10 +3261,5 @@ if __name__ == '__main__':
     config = load_config()
     folders = load_folders()
     
-    # Запускаем приложение с curses
-    try:
-        curses.wrapper(lambda stdscr: asyncio.run(main(stdscr)))
-    except Exception as e:
-        print(f"Ошибка запуска приложения: {e}")
-        # Fallback to non-curses mode
-        asyncio.run(main())
+    # Запускаем основное приложение
+    asyncio.run(main())
