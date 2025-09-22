@@ -280,14 +280,16 @@ async def check_for_updates():
             # Добавляем случайный параметр для избежания кеширования
             timestamp = int(time.time())
             full_url = f"{version_url}?t={timestamp}"
-            print(f"Запрос обновления по URL: {full_url}")
             
             async with session.get(full_url, timeout=10) as response:
-                print(f"Статус ответа: {response.status}")
                 if response.status == 200:
                     latest_version = (await response.text()).strip()
-                    print(f"Получена версия из репозитория: '{latest_version}'")
-                    print(f"Текущая версия программы: '{VERSION}'")
+                    
+                    # Удаляем все нечисловые символы, кроме точек
+                    # Это уберет кавычки и другие возможные лишние символы
+                    import re
+                    latest_version_clean = re.sub(r'[^\d.]', '', latest_version)
+                    current_version_clean = re.sub(r'[^\d.]', '', VERSION)
                     
                     # Функция для сравнения версий
                     def version_tuple(version_str):
@@ -299,13 +301,11 @@ async def check_for_updates():
                         return tuple(map(int, parts))
                     
                     # Сравниваем версии
-                    current_tuple = version_tuple(VERSION)
-                    latest_tuple = version_tuple(latest_version)
-                    print(f"Текущая версия (кортеж): {current_tuple}")
-                    print(f"Последняя версия (кортеж): {latest_tuple}")
+                    current_tuple = version_tuple(current_version_clean)
+                    latest_tuple = version_tuple(latest_version_clean)
                     
                     if latest_tuple > current_tuple:
-                        print(f"\n⚠️ Доступно обновление {latest_version}! Текущая версия: {VERSION}")
+                        print(f"\n⚠️ Доступно обновление {latest_version_clean}! Текущая версия: {VERSION}")
                         print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/")
                         print("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n")
                         return True
