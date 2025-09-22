@@ -1,7 +1,7 @@
 # English
 
 # what is it?
-the console version of Telegram 
+This is not an official telegram client that works in the terminal
 
 # Installation
 
@@ -23,7 +23,7 @@ the console version of Telegram
 # Русский
 
 # что это?
-это консольная версия telegram создана с помощью библиотеки telethon
+Это консольная версия telegram создана с помощью библиотеки telethon.
 # установка
 
 1. Клонируйте репозиторий && установка зависимостей
