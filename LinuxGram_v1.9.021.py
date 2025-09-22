@@ -271,30 +271,43 @@ def print_header(title):
     print("=" * 80)
 
 async def check_for_updates():
-    """Проверяет наличие обновлений на GitHub"""
+    """Проверяет наличие обновлений на GitHub через прямой запрос к файлу"""
     try:
         async with aiohttp.ClientSession() as session:
-            # Получаем информацию о последнем релизе из GitHub API
-            async with session.get('https://api.github.com/repos/hairpin01/LinuxGram/releases/latest') as response:
+            # Прямой запрос к raw-файлу с версией в репозитории
+            version_url = "https://raw.githubusercontent.com/hairpin01/LinuxGram/main/version.txt"
+            
+            # Добавляем случайный параметр для избежания кеширования
+            timestamp = int(time.time())
+            async with session.get(f"{version_url}?t={timestamp}", timeout=10) as response:
                 if response.status == 200:
-                    release_info = await response.json()
-                    latest_version = release_info['tag_name'].replace('v', '')
+                    latest_version = (await response.text()).strip()
                     
                     # Сравниваем версии
                     if latest_version > VERSION:
                         print(f"\n⚠️ Доступно обновление {latest_version}! Текущая версия: {VERSION}")
-                        print(f"Что нового: {release_info.get('body', 'Нет информации')}")
-                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/releases/latest")
+                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram.git")
                         print("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n")
                         return True
                     else:
                         print(f"✅ У вас актуальная версия {VERSION}")
+                        return False
                 else:
                     print("Не удалось проверить обновления (ошибка сервера)")
+                    return False
+    except asyncio.TimeoutError:
+        print("Таймаут при проверке обновлений")
+        return False
     except Exception as e:
         print(f"Ошибка при проверке обновлений: {e}")
-    
-    return False
+        return False
+
+# Создадим также функцию для создания файла версии (для разработчика)
+def create_version_file():
+    """Создает файл VERSION с текущей версией (для разработчика)"""
+    with open("VERSION", "w") as f:
+        f.write(VERSION)
+    print(f"Файл VERSION создан с версией {VERSION}")
 
 async def get_chat_info(dialog):
     """Получает информацию о чате/канале"""
