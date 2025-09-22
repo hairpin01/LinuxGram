@@ -1,2 +1,3 @@
-# LinuxGram
-the console version of Telegram
+# about LinuxGram 
+the console version of Telegram 
+# install
