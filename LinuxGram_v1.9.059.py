@@ -1044,8 +1044,8 @@ async def search_messages(dialog, query):
     search_results = await client.get_messages(dialog.entity, search=query, limit=20)
     
     if not search_results:
-        print("Сообщения не найдены.")
-        input("\nНажмите Enter для возврата...")
+        cprint("Сообщения не найдены.", "warning")
+        cinput("\nНажмите Enter для возврата...", "secondary")
         return False
     
     await show_messages(dialog, search_results, f"Результаты поиска: '{query}'")
