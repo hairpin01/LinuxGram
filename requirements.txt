@@ -2,3 +2,4 @@ telethon>=1.28.5
 aiohttp>=3.8.0
 pysocks>=1.7.1
 psutil>=6.0.0
+colorama>=0.4.6
