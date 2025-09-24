@@ -200,6 +200,149 @@ THEMES = {
     }
 }
 
+def ensure_config_dir():
+    """Создает конфигурационную директорию если её нет"""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    # Устанавливаем безопасные права доступа
+    os.chmod(CONFIG_DIR, 0o700)
+
+def generate_key():
+    """Генерирует ключ шифрования"""
+    return Fernet.generate_key()
+
+def load_or_create_key():
+    """Загружает существующий ключ или создает новый"""
+    ensure_config_dir()
+    
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, 'rb') as f:
+            return f.read()
+    else:
+        key = generate_key()
+        with open(KEY_FILE, 'wb') as f:
+            f.write(key)
+        # Устанавливаем безопасные права доступа
+        os.chmod(KEY_FILE, 0o600)
+        return key
+
+def encrypt_data(data, key):
+    """Шифрует данные"""
+    fernet = Fernet(key)
+    return fernet.encrypt(data.encode())
+
+def decrypt_data(encrypted_data, key):
+    """Дешифрует данные"""
+    fernet = Fernet(key)
+    return fernet.decrypt(encrypted_data).decode()
+
+def save_api_credentials(api_id, api_hash):
+    """Безопасно сохраняет API credentials"""
+    key = load_or_create_key()
+    
+    data = {
+        'api_id': api_id,
+        'api_hash': api_hash,
+        'hash': hashlib.sha256(f"{api_id}{api_hash}".encode()).hexdigest()  # Для проверки целостности
+    }
+    
+    encrypted_data = encrypt_data(json.dumps(data), key)
+    
+    with open(SECRET_FILE, 'wb') as f:
+        f.write(encrypted_data)
+    
+    # Устанавливаем безопасные права доступа
+    os.chmod(SECRET_FILE, 0o600)
+
+def load_api_credentials():
+    """Загружает API credentials"""
+    if not os.path.exists(SECRET_FILE):
+        return None, None
+    
+    try:
+        key = load_or_create_key()
+        
+        with open(SECRET_FILE, 'rb') as f:
+            encrypted_data = f.read()
+        
+        decrypted_data = json.loads(decrypt_data(encrypted_data, key))
+        
+        # Проверяем целостность данных
+        expected_hash = hashlib.sha256(
+            f"{decrypted_data['api_id']}{decrypted_data['api_hash']}".encode()
+        ).hexdigest()
+        
+        if decrypted_data['hash'] == expected_hash:
+            return decrypted_data['api_id'], decrypted_data['api_hash']
+        else:
+            print("⚠️ Обнаружена поврежденная конфигурация API")
+            return None, None
+            
+    except Exception as e:
+        print(f"❌ Ошибка при загрузке API данных: {e}")
+        return None, None
+
+def validate_api_id(api_id):
+    """Проверяет валидность API ID"""
+    try:
+        api_id_int = int(api_id)
+        return api_id_int > 0 and len(api_id) >= 5
+    except ValueError:
+        return False
+
+def validate_api_hash(api_hash):
+    """Проверяет валидность API Hash"""
+    return isinstance(api_hash, str) and len(api_hash) == 32 and api_hash.isalnum()
+
+def secure_input(prompt, password=False):
+    """Безопасный ввод данных"""
+    if password:
+        return getpass.getpass(prompt)
+    else:
+        return input(prompt)
+
+def setup_api_credentials_interactive():
+    """Интерактивная настройка API credentials с валидацией"""
+    print("\n🔐 Настройка API Telegram")
+    print("=" * 50)
+    
+    while True:
+        api_id = secure_input("Введите ваш API ID: ").strip()
+        
+        if not validate_api_id(api_id):
+            print("❌ Неверный API ID. Должен быть числом (например: 1234567)")
+            continue
+            
+        api_hash = secure_input("Введите ваш API Hash: ").strip()
+        
+        if not validate_api_hash(api_hash):
+            print("❌ Неверный API Hash. Должен быть 32-символьной строкой")
+            continue
+        
+        # Подтверждение
+        print(f"\nПроверьте введенные данные:")
+        print(f"API ID: {api_id}")
+        print(f"API Hash: {api_hash[:8]}...{api_hash[-8:]}")
+        
+        confirm = secure_input("\nСохранить эти данные? (y/n): ").lower().strip()
+        
+        if confirm in ['y', 'yes', 'д', 'да']:
+            save_api_credentials(int(api_id), api_hash)
+            print("✅ API данные успешно сохранены!")
+            return int(api_id), api_hash
+        else:
+            retry = secure_input("Попробовать снова? (y/n): ").lower().strip()
+            if retry not in ['y', 'yes', 'д', 'да']:
+                return None, None
+
+def reset_api_credentials():
+    """Сбрасывает сохраненные API credentials"""
+    if os.path.exists(SECRET_FILE):
+        os.remove(SECRET_FILE)
+        print("✅ API данные удалены")
+    if os.path.exists(KEY_FILE):
+        os.remove(KEY_FILE)
+        print("✅ Ключ шифрования удален")
+
 def get_theme_color(element):
     """Возвращает цвет элемента для текущей темы"""
     theme_name = config.get("appearance", {}).get("theme", "default")
