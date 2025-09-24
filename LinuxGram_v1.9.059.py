@@ -4,12 +4,14 @@ import mimetypes
 import json
 import random
 import re
-import aiohttp
 import math
 import asyncio
 import aiohttp
 import time
 import colorama
+import hashlib
+import getpass
+from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init as colorama_init
 from urllib.parse import urlparse
 from datetime import datetime
@@ -116,8 +118,11 @@ SESSION_FILE = 'linuxgram.session'
 DOWNLOADS_DIR = "downloads"
 CONFIG_FILE = "config.json"
 FOLDERS_FILE = "folders.json"
-PROXY_CACHE_FILE = "proxy_cache.json"  # Новый файл для кеширования прокси
-
+PROXY_CACHE_FILE = "proxy_cache.json" 
+CONFIG_DIR = os.path.expanduser("~/.config/linuxgram")
+SECRET_FILE = os.path.join(CONFIG_DIR, "secrets.json")
+KEY_FILE = os.path.join(CONFIG_DIR, ".key")
+    
 client = None
 proxy_cache = {}
 current_proxy = None
@@ -199,6 +204,12 @@ THEMES = {
         "background": ""
     }
 }
+
+def ensure_config_dir():
+    """Создает конфигурационную директорию если её нет"""
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    # Устанавливаем безопасные права доступа
+    os.chmod(CONFIG_DIR, 0o700)
 
 def get_theme_color(element):
     """Возвращает цвет элемента для текущей темы"""
