@@ -10,6 +10,9 @@ import asyncio
 import aiohttp
 import time
 import colorama
+import hashlib
+import getpass
+from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init as colorama_init
 from urllib.parse import urlparse
 from datetime import datetime
@@ -27,8 +30,11 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "PySocks"])
     import socks
 
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "linuxgram")
+SECRET_FILE = os.path.join(CONFIG_DIR, "secrets.json")
+KEY_FILE = os.path.join(CONFIG_DIR, ".key")
 
-# Конфигурация прокси (добавлено)
+# Конфигурация прокси 
 PROXY_CONFIG = {
     "proxify": {
         "name": "Proxify",
@@ -109,7 +115,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.059"
+VERSION = "1.9.062"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -3295,48 +3301,107 @@ async def change_folder():
     
     cinput("\nНажмите Enter для продолжения...", "secondary")
 
-async def main():
-    global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH, config, folders, current_folder  
+async def main_improved():
+    global API_ID, API_HASH, config, folders, current_folder  
     
     # Исправляем отсутствующие ключи конфигурации
     fix_missing_config_keys()
     
-    # Проверка на значения по умолчанию
-    if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
-        cprint("⚠️  Обнаружены значения API по умолчанию!", "warning")
-        print("Для работы с Telegram необходимо получить свои API ID и API Hash")
-        print("Инструкция:")
-        print("1. Перейдите на https://my.telegram.org")
-        print("2. Войдите в свой аккаунт")
-        print("3. Перейдите в раздел 'API Development Tools'")
-        print("4. Создайте новое приложение и получите API ID и API Hash")
-        print()
-        
-        change_api = input("Хотите ввести свои API ID и API Hash сейчас? (y/n): ").strip().lower()
-        if change_api == 'y':
-            try:
-                new_api_id = input("Введите ваш API ID: ").strip()
-                new_api_hash = input("Введите ваш API Hash: ").strip()
-                
-                if new_api_id.isdigit() and new_api_hash:
-                    API_ID = int(new_api_id)
-                    API_HASH = new_api_hash
-                    print("✅ API данные успешно обновлены!")
-                    print("Эти значения будут использоваться только в текущем сеансе.")
-                    print("Для постоянного использования измените значения в коде.")
-                else:
-                    cprint("❌ Неверные данные. Используются значения по умолчанию.", "error")
-            except Exception as e:
-                cprint(f"❌ Ошибка при вводе данных: {e}", "error")
-                cprint("Используются значения по умолчанию.", "warning")
-        else:
-            cprint("Используются значения по умолчанию.", "warning")
-        
-        cinput("\nНажмите Enter для продолжения...", "secondary")
-    
     # Загружаем конфиг
     config = load_config()
     folders = load_folders()
+    
+    # Улучшенная обработка API данных
+    print_header("🔐 Проверка аутентификации")
+    
+    # Пытаемся загрузить сохраненные credentials
+    saved_api_id, saved_api_hash = load_api_credentials()
+    
+    if saved_api_id and saved_api_hash:
+        API_ID = saved_api_id
+        API_HASH = saved_api_hash
+        cprint("✅ Загружены сохраненные API данные", "success")
+    else:
+        cprint("⚠️ API данные не найдены или повреждены", "warning")
+        
+        # Проверяем значения по умолчанию
+        if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
+            cprint("❌ Обнаружены значения API по умолчанию!", "error")
+            print("\nДля работы с Telegram необходимо получить свои API ID и API Hash")
+            print("Инструкция:")
+            print("1. Перейдите на https://my.telegram.org")
+            print("2. Войдите в свой аккаунт")
+            print("3. Перейдите в раздел 'API Development Tools'")
+            print("4. Создайте новое приложение и получите API ID и API Hash")
+            print()
+            
+            setup_choice = input("Хотите настроить API данные сейчас? (y/n/r - сброс): ").strip().lower()
+            
+            if setup_choice in ['y', 'yes', 'д', 'да']:
+                new_api_id, new_api_hash = setup_api_credentials_interactive()
+                if new_api_id and new_api_hash:
+                    API_ID = new_api_id
+                    API_HASH = new_api_hash
+                else:
+                    cprint("❌ Настройка API отменена. Программа завершена.", "error")
+                    return
+            elif setup_choice == 'r':
+                reset_api_credentials()
+                cprint("✅ Данные сброшены. Перезапустите программу.", "success")
+                return
+            else:
+                cprint("⚠️ Используются значения по умолчанию (возможны ограничения)", "warning")
+        else:
+            # Пользователь вручную изменил API данные в коде
+            cprint("⚠️ Обнаружены API данные в коде", "warning")
+            save_choice = input("Хотите сохранить их в безопасном хранилище? (y/n): ").strip().lower()
+            if save_choice in ['y', 'yes', 'д', 'да']:
+                save_api_credentials(API_ID, API_HASH)
+                cprint("✅ API данные сохранены в безопасное хранилище", "success")
+    
+    # Меню управления API данными
+    while True:
+        print_header("Управление API данными")
+        cprint(f"Текущий API ID: {API_ID}", "info")
+        cprint(f"Текущий API Hash: {API_HASH[:8]}...{API_HASH[-8:]}", "info")
+        print("\n1. Продолжить работу")
+        print("2. Изменить API данные")
+        print("3. Удалить сохраненные данные")
+        print("4. Проверить подключение")
+        cprint("0. Выход", "secondary")
+        
+        choice = input("\nВыберите действие: ").strip()
+        
+        if choice == '1':
+            break
+        elif choice == '2':
+            new_api_id, new_api_hash = setup_api_credentials_interactive()
+            if new_api_id and new_api_hash:
+                API_ID = new_api_id
+                API_HASH = new_api_hash
+                cprint("✅ API данные обновлены!", "success")
+        elif choice == '3':
+            reset_api_credentials()
+            cprint("✅ Данные удалены. Перезапустите программу.", "success")
+            return
+        elif choice == '4':
+            # Тест подключения с текущими credentials
+            cprint("🔍 Тестирование подключения...", "info")
+            try:
+                test_client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
+                await test_client.connect()
+                if await test_client.is_user_authorized():
+                    me = await test_client.get_me()
+                    cprint(f"✅ Успешное подключение как: {me.first_name}", "success")
+                else:
+                    cprint("❌ Клиент не авторизован", "error")
+                await test_client.disconnect()
+            except Exception as e:
+                cprint(f"❌ Ошибка подключения: {e}", "error")
+        elif choice == '0':
+            return
+        else:
+            cprint("❌ Неверный выбор!", "error")
     
     # Проверка обновлений при запуске (только если не в режиме разработки)
     if not os.path.exists("DEV_MODE"):
@@ -3628,4 +3693,4 @@ if __name__ == '__main__':
     folders = load_folders()
     
     # Запускаем основное приложение
-    asyncio.run(main())
+    asyncio.run(main_improved())
