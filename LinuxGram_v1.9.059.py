@@ -9,6 +9,8 @@ import math
 import asyncio
 import aiohttp
 import time
+import colorama
+from colorama import Fore, Back, Style, init as colorama_init
 from urllib.parse import urlparse
 from datetime import datetime
 from telethon import TelegramClient, events, functions, types
@@ -107,7 +109,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.021"
+VERSION = "1.9.059"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -126,7 +128,97 @@ client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
 # Создаем папку для загрузок
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-# Загрузка конфигурации
+colorama_init(autoreset=True)
+
+# Определение цветовых тем
+THEMES = {
+    "default": {
+        "header": Fore.GREEN + Style.BRIGHT,
+        "primary": Fore.WHITE,
+        "secondary": Fore.LIGHTBLACK_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.CYAN,
+        "highlight": Fore.MAGENTA + Style.BRIGHT,
+        "background": ""
+    },
+    "dark": {
+        "header": Fore.CYAN + Style.BRIGHT,
+        "primary": Fore.WHITE,
+        "secondary": Fore.LIGHTBLACK_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.BLUE,
+        "highlight": Fore.MAGENTA + Style.BRIGHT,
+        "background": ""
+    },
+    "light": {
+        "header": Fore.BLUE + Style.BRIGHT,
+        "primary": Fore.BLACK,
+        "secondary": Fore.LIGHTBLACK_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.BLUE,
+        "highlight": Fore.MAGENTA + Style.BRIGHT,
+        "background": ""
+    },
+    "blue": {
+        "header": Fore.BLUE + Style.BRIGHT,
+        "primary": Fore.CYAN,
+        "secondary": Fore.LIGHTBLUE_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.WHITE,
+        "highlight": Fore.MAGENTA + Style.BRIGHT,
+        "background": ""
+    },
+    "purple": {
+        "header": Fore.MAGENTA + Style.BRIGHT,
+        "primary": Fore.LIGHTMAGENTA_EX,
+        "secondary": Fore.LIGHTBLACK_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.CYAN,
+        "highlight": Fore.YELLOW + Style.BRIGHT,
+        "background": ""
+    },
+    "matrix": {
+        "header": Fore.GREEN + Style.BRIGHT,
+        "primary": Fore.GREEN,
+        "secondary": Fore.LIGHTGREEN_EX,
+        "success": Fore.GREEN,
+        "warning": Fore.YELLOW,
+        "error": Fore.RED,
+        "info": Fore.WHITE,
+        "highlight": Fore.WHITE + Style.BRIGHT,
+        "background": ""
+    }
+}
+
+def get_theme_color(element):
+    """Возвращает цвет элемента для текущей темы"""
+    theme_name = config.get("appearance", {}).get("theme", "default")
+    theme = THEMES.get(theme_name, THEMES["default"])
+    return theme.get(element, "")
+
+
+def fix_missing_config_keys():
+    """Добавляет отсутствующие ключи в конфигурацию"""
+    global config
+    
+    # Добавляем use_colors если его нет
+    if "use_colors" not in config.get("appearance", {}):
+        if "appearance" not in config:
+            config["appearance"] = {}
+        config["appearance"]["use_colors"] = True
+        save_config(config)
+        cprint("✅ Добавлен отсутствующий ключ 'use_colors' в конфигурацию", "success")
+
 def load_config():
     default_config = {
         "privacy": {
@@ -145,10 +237,11 @@ def load_config():
             "preview": True
         },
         "appearance": {
-            "theme": "system",
+            "theme": "default",
             "message_text_size": "medium",
             "animate_emojis": True,
-            "show_media_previews": True
+            "show_media_previews": True,
+            "use_colors": True  # Добавляем этот ключ
         },
         "data": {
             "auto_download": {
@@ -178,9 +271,76 @@ def load_config():
         with open(CONFIG_FILE, 'r') as f:
             loaded_config = json.load(f)
             # Обновляем конфиг, добавляя отсутствующие ключи
-            return update_config(loaded_config, default_config)
+            updated_config = update_config(loaded_config, default_config)
+            
+            # Гарантируем, что use_colors присутствует
+            if "appearance" not in updated_config:
+                updated_config["appearance"] = {}
+            if "use_colors" not in updated_config["appearance"]:
+                updated_config["appearance"]["use_colors"] = True
+                
+            return updated_config
     except FileNotFoundError:
         return default_config
+         
+      
+
+def safe_get_config(key_path, default_value):
+    """Безопасно получает значение из конфига по пути ключей"""
+    keys = key_path.split('.')
+    value = config
+    for key in keys:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return default_value
+    return value
+
+def cprint(text, color_element="primary"):
+    """Безопасный цветной вывод текста"""
+    use_colors = safe_get_config("appearance.use_colors", True)
+    if not use_colors:
+        print(text)
+        return
+
+    theme_name = safe_get_config("appearance.theme", "default")
+    theme = THEMES.get(theme_name, THEMES["default"])
+    color = theme.get(color_element, "")
+    print(color + text + Style.RESET_ALL)
+
+def cinput(prompt, color_element="primary"):
+    """Безопасный цветной ввод"""
+    use_colors = safe_get_config("appearance.use_colors", True)
+    if not use_colors:
+        return input(prompt)
+
+    theme_name = safe_get_config("appearance.theme", "default")
+    theme = THEMES.get(theme_name, THEMES["default"])
+    color = theme.get(color_element, "")
+    user_input = input(color + prompt + Style.RESET_ALL)
+    return user_input
+
+def print_colored_header(title):
+    """Безопасный цветной заголовок"""
+    clear_console()
+    
+    use_colors = safe_get_config("appearance.use_colors", True)
+    theme_name = safe_get_config("appearance.theme", "default")
+    
+    if not use_colors:
+        print("=" * 80)
+        print(f"LinuxGram, версия: {VERSION}. - {title}")
+        print("=" * 80)
+        return
+
+    theme = THEMES.get(theme_name, THEMES["default"])
+    header_color = theme.get("header", "")
+    line = "=" * 80
+    
+    print(header_color + line + Style.RESET_ALL)
+    print(header_color + f"LinuxGram, версия: {VERSION}. - {title}" + Style.RESET_ALL)
+    print(header_color + line + Style.RESET_ALL)
+
 
 def update_config(loaded_config, default_config):
     """Рекурсивно обновляет конфиг, добавляя отсутствующие ключи"""
@@ -265,10 +425,7 @@ def clear_console():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 def print_header(title):
-    clear_console()
-    print("=" * 80)
-    print(f"LinuxGram, версия: {VERSION}. - {title}")
-    print("=" * 80)
+    print_colored_header(title)
 
 async def check_for_updates():
     """Проверяет наличие обновлений на GitHub через прямой запрос к файлу"""
@@ -305,12 +462,12 @@ async def check_for_updates():
                     latest_tuple = version_tuple(latest_version_clean)
                     
                     if latest_tuple > current_tuple:
-                        print(f"\n⚠️ Доступно обновление {latest_version_clean}! Текущая версия: {VERSION}")
-                        print("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/")
-                        print("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n")
+                        cprint(f"\n⚠️ Доступно обновление {latest_version_clean}! Текущая версия: {VERSION}", "warning")
+                        cprint("Скачать можно по ссылке: https://github.com/hairpin01/LinuxGram/", "warning")
+                        cprint("Рекомендуется обновиться для получения новых функций и исправлений ошибок.\n", "warning")
                         return True
                     else:
-                        print(f"✅ У вас актуальная версия {VERSION}")
+                        cprint(f"✅ У вас актуальная версия {VERSION}", "success")
                         return False
                 else:
                     print(f"Не удалось проверить обновления (ошибка сервера: {response.status})")
@@ -327,7 +484,7 @@ def create_version_file():
     """Создает файл VERSION с текущей версией (для разработчика)"""
     with open("VERSION", "w") as f:
         f.write(VERSION)
-    print(f"Файл VERSION создан с версией {VERSION}")
+    cprint(f"Файл VERSION создан с версией {VERSION}", "success")
 
 async def get_chat_info(dialog):
     """Получает информацию о чате/канале"""
@@ -373,7 +530,7 @@ async def show_dialogs():
     print_header(f"Ваши диалоги - Папка: {current_folder}")
     
     # Показываем доступные папки
-    print("Папки:")
+    cprint("Папки:", "info")
     for i, folder_name in enumerate(folders.keys()):
         folder_icon = "📁"
         if folder_name == "Архив":
@@ -392,9 +549,9 @@ async def show_dialogs():
                     unread_count += dialog.unread_count
         
         unread_info = f" ({unread_count} непр.)" if unread_count > 0 else ""
-        print(f"{i+1}. {folder_icon} {folder_name} [{chat_count} чатов]{unread_info}")
+        cprint(f"{i+1}. {folder_icon} {folder_name} [{chat_count} чатов]{unread_info}", "primary")
     
-    print("-" * 80)
+    cprint("-" * 80, "secondary")
     
     # Фильтруем диалоги в зависимости от текущей папки
     filtered_dialogs = []
@@ -457,16 +614,23 @@ async def show_dialogs():
         
         unread = f" ({dialog.unread_count} непр.)" if dialog.unread_count > 0 else ""
         archived = " [АРХИВ]" if str(dialog.id) in folders["Архив"] else ""
-        print(f"{i+1:2d}. {dialog.name}{dialog_type}{members_info}{unread}{archived}{status_info}")
+        cprint(f"{i+1:2d}. {dialog.name}{dialog_type}{members_info}{unread}{archived}{status_info}", "primary")
     
-    print("\n0. Выход")
-    print("s. Настройки")
-    print("i. Итоги")
-    print("a. " + ("Показать обычные чаты" if show_archived else "Показать архив"))
-    print("p. Поиск контактов")
-    print("c. Создать группу/канал")
-    print("m. Управление папками")
-    print("f. Сменить папку")
+    # Меню действий
+    cprint("\n0. Выход", "error")
+    cprint("s. Настройки", "highlight")
+    cprint("i. Итоги", "highlight")
+    
+    if show_archived:
+        cprint("a. Показать обычные чаты", "highlight")
+    else:
+        cprint("a. Показать архив", "highlight")
+    
+    cprint("p. Поиск контактов", "highlight")
+    cprint("c. Создать группу/канал", "highlight")
+    cprint("m. Управление папками", "highlight")
+    cprint("f. Сменить папку", "highlight")
+    
     return filtered_dialogs
 
 async def get_sender_name(sender):
@@ -689,7 +853,7 @@ async def show_messages(dialog, messages=None, title=None):
             print("13. Добавить участников")
         print("14. Изменить аватарку")
 
-    print("0. Назад")
+    cprint("0. Назад", "secondary")
     
     if reply_to_message:
         # Находим номер сообщения в отображаемом списке
@@ -699,7 +863,7 @@ async def show_messages(dialog, messages=None, title=None):
                 reply_index = i + 1
                 break
         if reply_index:
-            print(f"↩️ Ответ на сообщение {reply_index} (x для отмены)")
+            cprint(f"↩️ Ответ на сообщение {reply_index} (x для отмены)", "highlight")
 
 async def show_user_profile(user, dialog=None):
     """Показывает профиль пользователя"""
@@ -720,9 +884,9 @@ async def show_user_profile(user, dialog=None):
         
         # Био
         if full_user.full_user.about:
-            print(f"Био: {full_user.full_user.about}")
+            cprint(f"Био: {full_user.full_user.about}", "secondary")
         else:
-            print("Био: Не указано")
+            cprint("Био: Не указано", "warning")
         
         # Номер телефона (если доступен)
         if user.phone:
@@ -732,9 +896,9 @@ async def show_user_profile(user, dialog=None):
         
         # Бот или человек
         if user.bot:
-            print("Тип: 🤖 Бот")
+            cprint("Тип: 🤖 Бот", "warning")
         else:
-            print("Тип: 👤 Пользователь")
+            cprint("Тип: 👤 Пользователь", "info")
         
         # Закрепленный канал (если есть)
         if hasattr(full_user.full_user, 'pinned_msg_id') and full_user.full_user.pinned_msg_id:
@@ -746,14 +910,14 @@ async def show_user_profile(user, dialog=None):
             except:
                 print("Закрепленное сообщение: (не удалось получить)")
         
-        print("\nДействия:")
+        cprint("\nДействия:", "info")
         print("1. Написать сообщение")
         if not user.bot:
             print("2. Позвонить")
             print("3. Добавить в контакты")
-        print("0. Назад")
+        cprint("0. Назад", "secondary")
         
-        choice = input("\nВыберите действие: ")
+        choice = cinput("\nВыберите действие: ", "info")
         
         if choice == '1':
             if dialog:
@@ -762,27 +926,27 @@ async def show_user_profile(user, dialog=None):
             else:
                 # Создаем новый диалог
                 await client.send_message(user.id, "Привет!")
-                print("Сообщение отправлено!")
-                input("\nНажмите Enter для продолжения...")
+                cprint("Сообщение отправлено!", "success")
+                cinput("\nНажмите Enter для продолжения...", "secondary")
         
         elif choice == '2' and not user.bot:
             print("Звонки пока не поддерживаются в LinuxGram.")
-            input("\nНажмите Enter для продолжения...")
+            cinput("\nНажмите Enter для продолжения...", "secondary")
         
         elif choice == '3' and not user.bot:
             print("Добавление в контакты пока не поддерживается в LinuxGram.")
-            input("\nНажмите Enter для продолжения...")
+            cinput("\nНажмите Enter для продолжения...", "secondary")
         
         elif choice == '0':
             return "back"
         
         else:
             print("Неверный выбор!")
-            input("\nНажмите Enter для продолжения...")
+            cinput("\nНажмите Enter для продолжения...", "secondary")
             
     except Exception as e:
         print(f"Ошибка при получении информации о пользователе: {e}")
-        input("\nНажмите Enter для возврата...")
+        cinput("\nНажмите Enter для возврата...", "secondary")
     
     return "back"
 
@@ -804,7 +968,7 @@ async def show_participants(dialog):
         
         if not participants:
             print("Не удалось получить список участников.")
-            input("\nНажмиte Enter для возврата...")
+            cinput("\nНажмиte Enter для возврата...", "secondary")
             return
         
         # Сортируем участников: сначала онлайн, потом по имени
@@ -854,7 +1018,7 @@ async def show_participants(dialog):
         
         # Предлагаем просмотреть профиль участника
         print("\nВведите номер участника для просмотра профиля или 0 для возврата:")
-        choice = input("Ваш выбор: ")
+        choice = cinput("Ваш выбор: ", "info")
         
         try:
             choice_idx = int(choice)
@@ -877,7 +1041,7 @@ async def show_participants(dialog):
         
     except Exception as e:
         print(f"Ошибка при получении списка участников: {e}")
-        input("\nНажмите Enter для возврата...")
+        cinput("\nНажмите Enter для возврата...", "secondary")
 
 async def search_contacts():
     """Поиск контактов по username, номеру телефона или имени"""
@@ -887,7 +1051,7 @@ async def search_contacts():
     print("1. Поиск по username")
     print("2. Поиск по номеру телефона")
     print("3. Поиск по имени")
-    print("0. Назад")
+    cprint("0. Назад", "secondary")
     
     choice = input("\nВыберите тип поиска: ")
     
@@ -916,11 +1080,11 @@ async def search_contacts():
                     search_contacts_results = result.chats
                 else:
                     print("Пользователь или канал не найден!")
-                    input("\nНажмите Enter для возврата...")
+                    cinput("\nНажмите Enter для возврата...", "secondary")
                     return
             except Exception as e:
                 print(f"Ошибка при поиске по username: {e}")
-                input("\nНажмите Enter для возврата...")
+                cinput("\nНажмите Enter для возврата...", "secondary")
                 return
         
         elif choice == '2':  # Поиск по номеру телефона
@@ -945,11 +1109,11 @@ async def search_contacts():
                     await client(functions.contacts.DeleteContactsRequest(id=result.users))
                 else:
                     print("Пользователь не найден!")
-                    input("\nНажмите Enter для возврата...")
+                    cinput("\nНажмите Enter для возврата...", "secondary")
                     return
             except Exception as e:
                 print(f"Ошибка при поиске по номеру телефона: {e}")
-                input("\nНажмите Enter для возврата...")
+                cinput("\nНажмите Enter для возврата...", "secondary")
                 return
         
         elif choice == '3':  # Поиск по имени
@@ -963,21 +1127,21 @@ async def search_contacts():
                             search_contacts_results.append(user)
                 else:
                     print("Контакты не найдены!")
-                    input("\nНажмите Enter для возврата...")
+                    cinput("\nНажмите Enter для возврата...", "secondary")
                     return
             except Exception as e:
                 print(f"Ошибка при получении контактов: {e}")
-                input("\nНажмите Enter для возврата...")
+                cinput("\nНажмите Enter для возврата...", "secondary")
                 return
             
             if not search_contacts_results:
                 print("Контакты не найдены!")
-                input("\nНажмите Enter для возврата...")
+                cinput("\nНажмите Enter для возврата...", "secondary")
                 return
         
         else:
             print("Неверный выбор!")
-            input("\nНажмите Enter для возврата...")
+            cinput("\nНажмите Enter для возврата...", "secondary")
             return
         
         # Показываем результаты поиска
@@ -985,7 +1149,7 @@ async def search_contacts():
         
         if not search_contacts_results:
             print("Ничего не найдено!")
-            input("\nНажмите Enter для возврата...")
+            cinput("\nНажмите Enter для возврата...", "secondary")
             return
         
         for i, entity in enumerate(search_contacts_results):
@@ -1002,7 +1166,7 @@ async def search_contacts():
                 print(f"{i+1:2d}. 👥 Группа: {entity.title}")
         
         print("\nВведите номер для просмотра профиля или 0 для возврата:")
-        choice = input("Ваш выбор: ")
+        choice = cinput("Ваш выбор: ", "info")
         
         try:
             choice_idx = int(choice)
@@ -1027,14 +1191,14 @@ async def search_contacts():
                 await search_contacts()
             else:
                 print("Неверный номер!")
-                input("\nНажмите Enter для возврата...")
+                cinput("\nНажмите Enter для возврата...", "secondary")
         except ValueError:
             print("Введите число!")
-            input("\nНажмите Enter для возврата...")
+            cinput("\nНажмите Enter для возврата...", "secondary")
             
     except Exception as e:
         print(f"Ошибка при поиске: {e}")
-        input("\nНажмите Enter для возврата...")
+        cinput("\nНажмите Enter для возврата...", "secondary")
 
 async def search_messages(dialog, query):
     global search_results
@@ -1044,8 +1208,8 @@ async def search_messages(dialog, query):
     search_results = await client.get_messages(dialog.entity, search=query, limit=20)
     
     if not search_results:
-        cprint("Сообщения не найдены.", "warning")
-        cinput("\nНажмите Enter для возврата...", "secondary")
+        print("Сообщения не найдены.")
+        input("\nНажмите Enter для возврата...")
         return False
     
     await show_messages(dialog, search_results, f"Результаты поиска: '{query}'")
@@ -1239,7 +1403,7 @@ async def view_media(message, dialog_name):
                 return True
         
         else:
-            print(f"Просмотр {media_desc} не поддерживается в консоли")
+            cprint(f"Просмотр {media_desc} не поддерживается в консоли", "warning")
             print("Скачайте файл для просмотра в внешней программе")
             
     except Exception as e:
@@ -1434,7 +1598,7 @@ async def show_privacy_settings():
         
         print("\n0. Назад")
         
-        choice = input("\nВыберите настройку для изменения: ")
+        choice = cinput("\nВыберите настройку для изменения: ", "info")
         
         if choice == '0':
             break
@@ -1504,9 +1668,9 @@ async def show_notification_settings():
             current_value = "вкл" if config["notifications"][key] else "выкл"
             print(f"{i+1}. {setting['name']}: {current_value}")
         
-        print("\n0. Назад")
+        cprint("\n0. Назад", "secondary")
         
-        choice = input("\nВыберите настройку для изменения: ")
+        choice = cinput("\nВыберите настройку для изменения: ", "info")
         
         if choice == '0':
             break
@@ -1524,15 +1688,15 @@ async def show_notification_settings():
             else:
                 print("Неверный выбор!")
         except ValueError:
-            print("Введите число!")
+            cprint("Введите число!", "warning")
 
 async def show_appearance_settings():
     global config
     
     appearance_options = {
         "theme": {
-            "name": "Тема",
-            "options": ["системная", "светлая", "тёмная"]
+            "name": "Цветовая тема",
+            "options": ["default", "dark", "light", "blue", "purple", "matrix"]
         },
         "message_text_size": {
             "name": "Размер текста",
@@ -1545,6 +1709,10 @@ async def show_appearance_settings():
         "show_media_previews": {
             "name": "Превью медиа",
             "type": "bool"
+        },
+        "use_colors": {
+            "name": "Цветной интерфейс",
+            "type": "bool"
         }
     }
     
@@ -1554,14 +1722,27 @@ async def show_appearance_settings():
         for i, (key, setting) in enumerate(appearance_options.items()):
             if "options" in setting:
                 current_value = config["appearance"][key]
-                print(f"{i+1}. {setting['name']}: {current_value}")
+                # Для темы показываем понятные названия
+                if key == "theme":
+                    theme_names = {
+                        "default": "Стандартная (зеленая)",
+                        "dark": "Темная (синяя)",
+                        "light": "Светлая (голубая, не рекомендую ставить)",
+                        "blue": "Синяя",
+                        "purple": "Фиолетовая",
+                        "matrix": "Матрица"
+                    }
+                    display_value = theme_names.get(current_value, current_value)
+                else:
+                    display_value = current_value
+                cprint(f"{i+1}. {setting['name']}: {display_value}", "primary")
             else:
                 current_value = "вкл" if config["appearance"][key] else "выкл"
-                print(f"{i+1}. {setting['name']}: {current_value}")
+                cprint(f"{i+1}. {setting['name']}: {current_value}", "primary")
         
-        print("\n0. Назад")
+        cprint("\n0. Назад", "secondary")
         
-        choice = input("\nВыберите настройку для изменения: ")
+        choice = cinput("\nВыберите настройку для изменения: ", "info")
         
         if choice == '0':
             break
@@ -1573,30 +1754,69 @@ async def show_appearance_settings():
                 setting = appearance_options[key]
                 
                 if "options" in setting:
-                    print(f"\n{setting['name']}:")
+                    cprint(f"\n{setting['name']}:", "header")
                     for i, option in enumerate(setting["options"]):
-                        print(f"{i+1}. {option}")
+                        # Для темы показываем понятные названия
+                        if key == "theme":
+                            theme_names = {
+                                "default": "Стандартная (зеленая)",
+                                "dark": "Темная (синяя)",
+                                "light": "Светлая (голубая, не рекомендую ставить)",
+                                "blue": "Синяя",
+                                "purple": "Фиолетовая",
+                                "matrix": "Матрица (зеленая)"
+                            }
+                            display_option = theme_names.get(option, option)
+                        else:
+                            display_option = option
+                        cprint(f"{i+1}. {display_option}", "primary")
                     
-                    option_choice = input("Выберите вариант: ")
+                    option_choice = cinput("Выберите вариант: ", "info")
                     
                     try:
                         option_idx = int(option_choice) - 1
                         if 0 <= option_idx < len(setting["options"]):
                             config["appearance"][key] = setting["options"][option_idx]
                             save_config(config)
-                            print("Настройка сохранена!")
+                            cprint("Настройка сохранена!", "success")
                         else:
-                            print("Неверный выбор!")
+                            cprint("Неверный выбор!", "error")
                     except ValueError:
-                        print("Введите число!")
+                        cprint("Введите число!", "error")
                 else:
                     config["appearance"][key] = not config["appearance"][key]
                     save_config(config)
-                    print(f"{setting['name']} {'включены' if config['appearance'][key] else 'выключены'}!")
+                    status = "включено" if config["appearance"][key] else "выключено"
+                    cprint(f"{setting['name']} {status}!", "success")
             else:
-                print("Неверный выбор!")
+                cprint("Неверный выбор!", "error")
         except ValueError:
-            print("Введите число!")
+            cprint("Введите число!", "error")
+
+async def preview_theme(theme_name):
+    """Показывает предпросмотр темы"""
+    print_header(f"Предпросмотр темы: {theme_name}")
+    
+    # Сохраняем текущую тему
+    current_theme = config["appearance"]["theme"]
+    
+    # Временно устанавливаем новую тему
+    config["appearance"]["theme"] = theme_name
+    
+    # Показываем пример интерфейса
+    cprint("Это пример текста в выбранной теме", "primary")
+    cprint("Заголовок раздела", "header")
+    cprint("Информационное сообщение", "info")
+    cprint("Успешная операция", "success")
+    cprint("Предупреждение", "warning")
+    cprint("Ошибка", "error")
+    cprint("Второстепенная информация", "secondary")
+    cprint("Выделенный текст", "highlight")
+    
+    # Восстанавливаем тему
+    config["appearance"]["theme"] = current_theme
+    
+    cinput("\nНажмите Enter для возврата...", "secondary")
 
 async def show_data_settings():
     global config
@@ -1649,9 +1869,9 @@ async def show_data_settings():
         data_usage = config["data"].get("data_usage", "medium")
         print(f"8. Использование данных: {data_usage}")
         
-        print("\n0. Назад")
+        cprint("\n0. Назад", "secondary")
         
-        choice = input("\nВыберите настройку для изменения: ")
+        choice = cinput("\nВыберите настройку для изменения: ", "info")
         
         if choice == '0':
             break
@@ -1677,10 +1897,10 @@ async def show_data_settings():
                 print(f"Сохранение в галерею {new_status}!")
             
             elif choice_idx == 8:
-                print("\nИспользование данных:")
-                print("1. Низкое")
-                print("2. Среднее")
-                print("3. Высокое")
+                cprint("\nИспользование данных:", "info")
+                cprint("1. Низкое", "secondary")
+                cprint("2. Среднее", "warning")
+                cprint("3. Высокое", "error")
                 
                 usage_choice = input("Выберите вариант: ")
                 
@@ -1697,9 +1917,9 @@ async def show_data_settings():
                         continue
                     
                     save_config(config)
-                    print("Настройка сохранена!")
+                    cprint("Настройка сохранена!", "success")
                 except ValueError:
-                    print("Введите число!")
+                    cprint("Введите число!", "warning")
             
             else:
                 print("Неверный выбор!")
@@ -1714,14 +1934,14 @@ async def show_language_settings():
     while True:
         print_header("Настройки языка")
         
-        print(f"Текущий язык: {config['language']}")
-        print("\nДоступные языки:")
+        cprint(f"Текущий язык: {config['language']}", "info")
+        cprint("\nДоступные языки:", "info")
         for i, lang in enumerate(languages):
             print(f"{i+1}. {lang}")
         
-        print("\n0. Назад")
+        cprint("\n0. Назад", "secondary")
         
-        choice = input("\nВыберите язык: ")
+        choice = cinput("\nВыберите язык: ", "info")
         
         if choice == '0':
             break
@@ -1750,31 +1970,31 @@ async def show_account_settings():
         print("2. Изменить фамилию")
         print("3. Изменить username")
         print("4. Изменить био")
-        print("5. Изменить аватарку")  # Новый пункт
-        print("6. Назад")  # Смещаем "Назад" на одну позицию
+        print("5. Изменить аватарку")  
+        cprint("6. Назад", "secondary")  
         
         choice = input("\nВыберите действие: ")
         
         if choice == '1':
-            new_first_name = input("Новое имя: ")
+            new_first_name = cinput("Новое имя: ", "info")
             if new_first_name and await update_profile(first_name=new_first_name):
                 print("Имя успешно изменено!")
                 me, full_user = await get_account_info()
         
         elif choice == '2':
-            new_last_name = input("Новая фамилию: ")
+            new_last_name = cinput("Новая фамилию: ", "info")
             if await update_profile(last_name=new_last_name):
                 print("Фамилия успешно изменена!")
                 me, full_user = await get_account_info()
         
         elif choice == '3':
-            new_username = input("Новый username (без @): ")
+            new_username = cinput("Новый username (без @): ", "info")
             if new_username and await update_username(new_username):
                 print("Username успешно изменен!")
                 me, full_user = await get_account_info()
         
         elif choice == '4':
-            new_bio = input("Новое био: ")
+            new_bio = cinput("Новое био: ", "info")
             if await update_profile(bio=new_bio):
                 print("Био успешно изменено!")
                 me, full_user = await get_account_info()
@@ -1787,17 +2007,17 @@ async def show_account_settings():
                 if mime_type and mime_type.startswith('image/'):
                     success = await change_profile_photo(file_path)
                     if success:
-                        print("Аватарка успешно изменена!")
+                        cprint("Аватарка успешно изменена!", "success")
                     else:
-                        print("Не удалось изменить аватарку!")
+                        print("Не удалось изменить аватарку!", "error")
                 else:
-                    print("Файл должен быть изображением!")
+                    cprint("Файл должен быть изображением!", "warning")
         
         elif choice == '6':  # Теперь "Назад" на позиции 6
             break
         
         else:
-            print("Неверный выбор!")
+            cprint("Неверный выбор!", "secondary")
 
 async def show_proxy_settings():
     """Настройки прокси с автоматической проверкой"""
@@ -1820,9 +2040,9 @@ async def show_proxy_settings():
             proxy_config = config["proxy"].copy()
             is_working, delay = await check_proxy(f"{proxy_config['type']}://{proxy_config['host']}:{proxy_config['port']}")
             if is_working:
-                print(f"Задержка: {delay}мс")
+                cprint(f"Задержка: {delay}мс", "info")
             else:
-                print("❌ Прокси не работает!")
+                cprint("❌ Прокси не работает!", "warning")
         
         if config["proxy"]["username"]:
             print(f"Логин: {config['proxy']['username']}")
@@ -1830,13 +2050,13 @@ async def show_proxy_settings():
             print(f"Пароль: {'*' * len(config['proxy']['password'])}")
         
         print("\nДействия:")
-        print("1. Включить/выключить прокси")
+        cprint("1. Включить/выключить прокси", "primary")
         print("2. Изменить настройки прокси")
         print("3. Получить прокси из онлайн-источников")
         print("4. Протестировать текущий прокси")
-        print("0. Назад")
+        cprint("0. Назад", "secondary")
         
-        choice = input("\nВыберите действие: ")
+        choice = cinput("\nВыберите действие: ", "info")
         
         if choice == '1':
             config["proxy"]["enabled"] = not config["proxy"]["enabled"]
@@ -1847,7 +2067,7 @@ async def show_proxy_settings():
             # Если включили прокси, проверяем его
             if config["proxy"]["enabled"]:
                 if not await test_proxy_connection():
-                    print("⚠️ Внимание: прокси не работает!")
+                    cprint("⚠️ Внимание: прокси не работает!", "warning")
             
         elif choice == '2':
             print("\nВведите новые настройки прокси:")
@@ -1901,12 +2121,12 @@ async def fetch_online_proxies():
     
     print_header("Получение прокси из онлайн-источников")
     
-    print("Доступные источники:")
+    cprint("Доступные источники:", "info")
     sources = list(PROXY_CONFIG.keys())
     for i, source in enumerate(sources):
         print(f"{i+1}. {PROXY_CONFIG[source]['name']}")
     
-    print("0. Назад")
+    cprint("0. Назад", "secondary")
     
     try:
         choice = int(input("\nВыберите источник: "))
@@ -1922,7 +2142,7 @@ async def fetch_online_proxies():
         proxies = await fetch_proxies_from_source(source_config)
         
         if not proxies:
-            print(f"Не удалось получить прокси из {source_config['name']}!")
+            cprint(f"Не удалось получить прокси из {source_config['name']}!", "warning")
             print("Возможные причины:")
             print("1. Нет интернет-подключения")
             print("2. Источник временно недоступен")
@@ -2012,7 +2232,7 @@ async def fetch_online_proxies():
     except (ValueError, IndexError):
         print("Неверный выбор!")
     
-    input("\nНажмите Enter для продолжения...")
+    cinput("\nНажмите Enter для продолжения...", "secondary")
 
 async def check_mtproto_proxy(proxy_str, timeout=10):
     """
@@ -2219,7 +2439,7 @@ async def fetch_proxies_from_source(source_config):
                     print(f"Ошибка при запросе к {url}: {e}")
             return proxies
     except Exception as e:
-        print(f"Общая ошибка при получении прокси из {source_config['name']}: {e}")
+        cprint(f"Общая ошибка при получении прокси из {source_config['name']}: {e}", "error")
         return None
 
 def save_proxy_cache():
@@ -2290,7 +2510,7 @@ async def initialize_client():
     global client
     
     # Спрашиваем, использовать ли прокси
-    use_proxy = input("Хотите использовать прокси? (y/n) [y]: ").strip().lower()
+    use_proxy = cinput("Хотите использовать прокси? (y/n) [y]: ", "info").strip().lower()
     if use_proxy == '' or use_proxy == 'y':
         config["proxy"]["enabled"] = True
         print("Использование прокси включено.")
@@ -2307,7 +2527,7 @@ async def initialize_client():
                 if choice == '' or choice == 'y':
                     await show_proxy_settings()
                 else:
-                    print("Продолжаем без прокси.")
+                    cprint("Продолжаем без прокси.", "secondary")
                     config["proxy"]["enabled"] = False
     else:
         config["proxy"]["enabled"] = False
@@ -2391,16 +2611,16 @@ async def show_settings():
         print_header("Настройки")
         print("1. Конфиденциальность и безопасность")
         print("2. Уведомления и звуки")
-        print("3. Внешний вид")
+        cprint("3. Внешний вид", "primary")
         print("4. Данные и хранилище")
         print("5. Язык")
         print("6. Настройки аккаунта")
         print("7. Ночной режим")
         print("8. Настройки прокси")
         print("9. Проверить обновления")  # Новый пункт
-        print("0. Назад")
+        cprint("0. Назад", "secondary")
         
-        choice = input("\nВыберите раздел настроек: ")
+        choice = cinput("\nВыберите раздел настроек: ", "info")
         
         if choice == '1':
             await show_privacy_settings()
@@ -2423,7 +2643,7 @@ async def show_settings():
             await show_proxy_settings()
         elif choice == '9':  # Новый пункт для проверки обновлений
             await check_for_updates()
-            input("\nНажмите Enter для продолжения...")
+            cinput("\nНажмите Enter для продолжения...", "secondary")
         elif choice == '0':
             break
         else:
@@ -2563,7 +2783,7 @@ def file_explorer(start_path="."):
             else:
                 print(f"{i+1:2d}. {icon} {name} ({desc})")
         
-        print("\nДействия:")
+        cprint("\nДействия:", "info")
         print("0. Назад к чату")
         if current_path != os.path.abspath("."):
             print("h. Домой (текущая директория скрипта)")
@@ -2581,7 +2801,7 @@ def file_explorer(start_path="."):
                 current_path = parent_path
             else:
                 print("Невозможно подняться выше!")
-                input("\nНажмите Enter для продолжения...")
+                cinput("\nНажмите Enter для продолжения...", "secondary")
         elif choice.lower() == 'h':
             # Вернуться в домашнюю директорию
             current_path = os.path.abspath(".")
@@ -2608,17 +2828,17 @@ def file_explorer(start_path="."):
                         current_path = item_path
                     else:
                         print("Это не папка!")
-                        input("\nНажмите Enter для продолжения...")
+                        cinput("\nНажмите Enter для продолжения...", "secondary")
                 else:
                     # Возвращаем путь к файлу
                     if os.path.isfile(item_path):
                         return item_path
                     else:
                         print("Это не файл!")
-                        input("\nНажмите Enter для продолжения...")
+                        cinput("\nНажмите Enter для продолжения...", "secondary")
             else:
                 print("Неверный номер!")
-                input("\nНажмите Enter для продолжения...")
+                cinput("\nНажмите Enter для продолжения...", "secondary")
         else:
             # Попытка перейти по указанному пути
             if os.path.exists(choice):
@@ -2628,7 +2848,7 @@ def file_explorer(start_path="."):
                     return os.path.abspath(choice)
             else:
                 print("Путь не существует!")
-                input("\nНажмите Enter для продолжения...")
+                cinput("\nНажмите Enter для продолжения...", "secondary")
 
 async def create_group_or_channel():
     """Создает новую группу или канал"""
@@ -2636,9 +2856,9 @@ async def create_group_or_channel():
     
     print("1. Создать группу")
     print("2. Создать канал")
-    print("0. Назад")
+    cprint("0. Назад", "secondary")
     
-    choice = input("\nВыберите тип: ")
+    choice = cinput("\nВыберите тип: ", "info")
     
     if choice == '0':
         return
@@ -2646,7 +2866,7 @@ async def create_group_or_channel():
     title = input("Введите название: ")
     if not title:
         print("Название не может быть пустым!")
-        input("\nНажмите Enter для возврата...")
+        cinput("\nНажмите Enter для возврата...", "secondary")
         return
     
     description = input("Введите описание (необязательно): ")
@@ -2686,7 +2906,7 @@ async def create_group_or_channel():
         
         else:
             print("Неверный выбор!")
-            input("\nНажмите Enter для возврата...")
+            cinput("\nНажмите Enter для возврата...", "secondary")
             return
         
         # Устанавливаем аватарку, если была выбрана
@@ -2695,7 +2915,7 @@ async def create_group_or_channel():
             if success:
                 print("Аватарка успешно установлена!")
             else:
-                print("Не удалось установить аватарку!")
+                cprint("Не удалось установить аватарку!", "error")
         
         # Предложим добавить участников (только для групп)
         if choice == '1':  # Только для групп
@@ -2709,10 +2929,10 @@ async def create_group_or_channel():
             folders["Новые чаты"].append(new_chat_id)
             save_folders(folders)
         
-        input("\nНажмите Enter для возврата...")
+        cinput("\nНажмите Enter для возврата...", "secondary")
         
     except Exception as e:
-        print(f"Ошибка при создании: {e}")
+        cprint(f"Ошибка при создании: {e}", "error")
         input("\nНажмите Enter для возврата...")
 
 async def add_participants_to_group(group):
@@ -2722,7 +2942,7 @@ async def add_participants_to_group(group):
     while True:
         print("1. Добавить по username")
         print("2. Добавить из контактов")
-        print("0. Завершить добавление")
+        cprint("0. Завершить добавление", "success")
         
         choice = input("\nВыберите действие: ")
         
@@ -2795,11 +3015,11 @@ async def manage_folders():
                 print(f"{i+1:2d}. {folder_name}")
         
         print("\nДействия:")
-        print("1. Создать папку")
-        print("2. Удалить папку")
-        print("3. Переименовать папку")
-        print("4. Переместить чат в папку")
-        print("0. Назад")
+        cprint("1. Создать папку", "success")
+        cprint("2. Удалить папку", "error")
+        cprint("3. Переименовать папку", "warning")
+        cprint("4. Переместить чат в папку", "highlight")
+        cprint("0. Назад", "secondary")
         
         choice = input("\nВыберите действие: ")
         
@@ -2833,7 +3053,7 @@ async def manage_folders():
                         
                         del folders[folder_name]
                         save_folders(folders)
-                        print(f"Папка '{folder_name}' удалена!")
+                        cprint(f"Папка '{folder_name}' удалена!", "success")
                 else:
                     print("Неверный номер папки!")
             except ValueError:
@@ -2914,7 +3134,7 @@ async def change_folder():
     
     print_header("Смена папки")
     
-    print("Доступные папки:")
+    cprint("Доступные папки:", "info")
     for i, folder_name in enumerate(folders.keys()):
         print(f"{i+1:2d}. {folder_name}")
     
@@ -2930,14 +3150,17 @@ async def change_folder():
     except ValueError:
         print("Введите число!")
     
-    input("\nНажмите Enter для продолжения...")
+    cinput("\nНажмите Enter для продолжения...", "secondary")
 
 async def main():
-    global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH
+    global current_dialog, reply_to_message, selected_message_for_reaction, show_archived, client, API_ID, API_HASH, config, folders, current_folder  
+    
+    # Исправляем отсутствующие ключи конфигурации
+    fix_missing_config_keys()
     
     # Проверка на значения по умолчанию
     if API_ID == 12345678 or API_HASH == 'TYPE_YOU_API_HASH':
-        print("⚠️  Обнаружены значения API по умолчанию!")
+        cprint("⚠️  Обнаружены значения API по умолчанию!", "warning")
         print("Для работы с Telegram необходимо получить свои API ID и API Hash")
         print("Инструкция:")
         print("1. Перейдите на https://my.telegram.org")
@@ -2959,14 +3182,14 @@ async def main():
                     print("Эти значения будут использоваться только в текущем сеансе.")
                     print("Для постоянного использования измените значения в коде.")
                 else:
-                    print("❌ Неверные данные. Используются значения по умолчанию.")
+                    cprint("❌ Неверные данные. Используются значения по умолчанию.", "error")
             except Exception as e:
-                print(f"❌ Ошибка при вводе данных: {e}")
-                print("Используются значения по умолчанию.")
+                cprint(f"❌ Ошибка при вводе данных: {e}", "error")
+                cprint("Используются значения по умолчанию.", "warning")
         else:
-            print("Используются значения по умолчанию.")
+            cprint("Используются значения по умолчанию.", "warning")
         
-        input("\nНажмите Enter для продолжения...")
+        cinput("\nНажмите Enter для продолжения...", "secondary")
     
     # Загружаем конфиг
     config = load_config()
@@ -2974,18 +3197,18 @@ async def main():
     
     # Проверка обновлений при запуске (только если не в режиме разработки)
     if not os.path.exists("DEV_MODE"):
-        print("Проверка обновлений...")
+        cprint("Проверка обновлений...", "primary")
         try:
             await check_for_updates()
         except Exception as e:
-            print(f"Ошибка при проверке обновлений: {e}")
+            cprint(f"Ошибка при проверке обновлений: {e}", "error")
     
     # Инициализируем клиента с проверкой прокси
     await initialize_client()
     
     while True:
         dialogs = await show_dialogs()
-        choice = input("\nВыберите диалог: ")
+        choice = cinput("\nВыберите диалог: ", "info")
     
         
         if choice == '0':
@@ -3035,7 +3258,7 @@ async def main():
                     if message:
                         success = await send_text_message(selected_dialog, message)
                         if success:
-                            print("Сообщение отправлено!")
+                            cprint("Сообщение отправлено!", "success")
                 
                 elif action == '2':  # Ответить на сообщение
                     try:
@@ -3064,7 +3287,7 @@ async def main():
                         
                         success = await send_file(selected_dialog, file_path, compress)
                         if success:
-                            print("Файл отправлен!")
+                            cprint("Файл отправлен!", "success")
                     else:
                         print("Файл не найден!")
                 
@@ -3077,7 +3300,7 @@ async def main():
                             message_to_react = displayed_messages[msg_num - 1]
                             success = await set_reaction(selected_dialog, message_to_react.id, reaction)
                             if success:
-                                print("Реакция добавлена!")
+                                cprint("Реакция добавлена!", "success")
                         else:
                             print("Неверный номер сообщения!")
                     except ValueError:
