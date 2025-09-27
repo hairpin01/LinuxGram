@@ -13,13 +13,7 @@ This is not an official telegram client that works in the terminal
    · Visit my.telegram.org
    · Create a new application
    · Copy API ID and API Hash
-3. Configure the application
-   · Open linuxgram.py in a text editor
-   · Replace the default values:
-     ```python
-     API_ID = 12345678  # Replace with your API ID
-     API_HASH = 'TYPE_YOU_API_HASH'  # Replace with your API Hash
-     ```
+
 # Русский
 
 # что это?
@@ -35,10 +29,4 @@ This is not an official telegram client that works in the terminal
    · Зайдите на my.telegram.org
    · Создайте новое приложение
    · Скопируйте API ID и API Hash
-4. Настройте приложение
-   · Откройте linuxgram.py в текстовом редакторе
-   · Замените значения по умолчанию:
-     ```python
-     API_ID = 12345678  # Замените на ваш API ID
-     API_HASH = 'TYPE_YOU_API_HASH'  # Замените на ваш API Hash
-     ```
+
