@@ -13,7 +13,7 @@ This is not an official telegram client that works in the terminal
    · Visit my.telegram.org
    · Create a new application
    · Copy API ID and API Hash
-
+   • Launch
 # Русский
 
 # что это?
@@ -29,4 +29,4 @@ This is not an official telegram client that works in the terminal
    · Зайдите на my.telegram.org
    · Создайте новое приложение
    · Скопируйте API ID и API Hash
-
+   • Запустите.
