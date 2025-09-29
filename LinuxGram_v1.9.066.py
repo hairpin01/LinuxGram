@@ -7,6 +7,7 @@ import re
 import aiohttp
 import math
 import asyncio
+import sys
 import aiohttp
 import time
 import colorama
