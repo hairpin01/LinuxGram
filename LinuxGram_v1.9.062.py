@@ -29,6 +29,14 @@ except ImportError:
     import sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "PySocks"])
     import socks
+try:
+    from tqdm import tqdm
+except ImportError:
+    print("Установка необходимой библиотеки tqdm...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
+    from tqdm import tqdm
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "linuxgram")
 SECRET_FILE = os.path.join(CONFIG_DIR, "secrets.json")
