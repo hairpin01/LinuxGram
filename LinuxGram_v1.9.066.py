@@ -12,6 +12,7 @@ import time
 import colorama
 import hashlib
 import getpass
+import signal
 from cryptography.fernet import Fernet
 from colorama import Fore, Back, Style, init as colorama_init
 from urllib.parse import urlparse
@@ -20,7 +21,7 @@ from telethon import TelegramClient, events, functions, types
 from telethon.tl import functions
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo, DocumentAttributeAudio
 from telethon.network import ConnectionTcpMTProxyAbridged
-
+# i use arch Linux btw
 try:
     import socks
 except ImportError:
@@ -29,6 +30,14 @@ except ImportError:
     import sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "PySocks"])
     import socks
+try:
+    from tqdm import tqdm
+except ImportError:
+    print("Установка необходимой библиотеки tqdm...")
+    import subprocess
+    import sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tqdm"])
+    from tqdm import tqdm
 
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", "linuxgram")
 SECRET_FILE = os.path.join(CONFIG_DIR, "secrets.json")
@@ -115,7 +124,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.062"
+VERSION = "1.9.066"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -211,6 +220,15 @@ def ensure_config_dir():
     os.makedirs(CONFIG_DIR, exist_ok=True)
     # Устанавливаем безопасные права доступа
     os.chmod(CONFIG_DIR, 0o700)
+
+def setup_signal_handlers():
+    """Устанавливает обработчики сигналов для корректного завершения"""
+    def signal_handler(sig, frame):
+        cprint("\n\n⚠️ Загрузка прервана пользователем", "warning")
+        download_progress.finish()
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
 
 def generate_key():
     """Генерирует ключ шифрования"""
@@ -781,6 +799,47 @@ async def show_dialogs():
     cprint("f. Сменить папку", "highlight")
     
     return filtered_dialogs
+
+class DownloadProgress:
+    """Класс для отображения прогресса загрузки файлов"""
+    
+    def __init__(self):
+        self.current_bar = None
+        self.start_time = None
+        
+    def create_progress_bar(self, filename, total_size):
+        """Создает новый прогресс-бар"""
+        # Очищаем предыдущий прогресс-бар
+        if self.current_bar:
+            self.current_bar.close()
+            
+        self.start_time = time.time()
+        self.current_bar = tqdm(
+            desc=filename,
+            total=total_size,
+            unit='B',
+            unit_scale=True,
+            unit_divisor=1024,
+            ncols=80,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]'
+        )
+        return self.current_bar
+    
+    def update_progress(self, current, total):
+        """Обновляет прогресс-бар"""
+        if self.current_bar and total > 0:
+            if self.current_bar.total != total:
+                self.current_bar.total = total
+            self.current_bar.update(current - self.current_bar.n)
+    
+    def finish(self):
+        """Завершает и закрывает прогресс-бар"""
+        if self.current_bar:
+            self.current_bar.close()
+            self.current_bar = None
+
+# Глобальный экземпляр для управления прогресс-барами
+download_progress = DownloadProgress()
 
 async def get_sender_name(sender):
     """Получаем имя отправителя с учетом типа (User, Channel, Chat)"""
@@ -1460,7 +1519,7 @@ async def edit_message(message, new_text):
         return False
 
 async def download_file(message, dialog_name):
-    """Скачивает файл из сообщения"""
+    """Скачивает файл из сообщения с отображением прогресса"""
     try:
         # Создаем папку для диалога, если ее нет
         dialog_dir = os.path.join(DOWNLOADS_DIR, dialog_name.replace("/", "_"))
@@ -1491,74 +1550,164 @@ async def download_file(message, dialog_name):
         
         file_path = os.path.join(dialog_dir, file_name)
         
+        # Получаем размер файла
+        file_size = message.file.size if message.file else 0
+        
+        # Создаем прогресс-бар
+        progress_bar = download_progress.create_progress_bar(
+            os.path.basename(file_name), 
+            file_size
+        )
+        
+        # Функция callback для обновления прогресса
+        def progress_callback(current, total):
+            download_progress.update_progress(current, total)
+        
+        cprint(f"📥 Начинаем загрузку: {file_name}", "info")
+        cprint(f"💾 Размер: {format_file_size(file_size)}", "secondary")
+        
         # Скачиваем файл
-        print(f"Скачивание файла: {file_name}")
-        download_path = await message.download_media(file=file_path)
+        download_path = await message.download_media(
+            file=file_path,
+            progress_callback=progress_callback
+        )
+        
+        # Завершаем прогресс-бар
+        download_progress.finish()
         
         if download_path:
-            print(f"Файл сохранен: {download_path}")
+            cprint(f"✅ Файл успешно сохранен: {download_path}", "success")
             return True
         else:
-            print("Ошибка при скачивании файла")
+            cprint("❌ Ошибка при скачивании файла", "error")
+            download_progress.finish()
             return False
             
     except Exception as e:
-        print(f"Ошибка при скачивании файла: {e}")
+        cprint(f"❌ Ошибка при скачивании файла: {e}", "error")
+        download_progress.finish()
         return False
 
+def format_file_size(size_bytes):
+    """Форматирует размер файла в читаемый вид"""
+    if size_bytes == 0:
+        return "0 B"
+    
+    size_names = ["B", "KB", "MB", "GB", "TB"]
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024.0
+        i += 1
+    
+    return f"{size_bytes:.2f} {size_names[i]}"
+
 async def view_media(message, dialog_name):
-    """Просмотр медиа-файла (если возможно)"""
+    """Просмотр медиа-файла (если возможно) с отображением прогресса загрузки"""
     try:
         media_type, media_desc = await get_media_info(message)
         
+        # Создаем временную папку для предпросмотра
+        temp_dir = os.path.join(DOWNLOADS_DIR, "temp_preview")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Генерируем временное имя файла
+        timestamp = int(time.time())
+        temp_filename = f"preview_{timestamp}"
+        
         if media_type == "photo":
-            # Для фото попробуем скачать и показать через системный просмотрщик
-            temp_path = await message.download_media(file=os.path.join(DOWNLOADS_DIR, "temp_photo.jpg"))
-            if temp_path and os.path.exists(temp_path):
-                print(f"Фото сохранено: {temp_path}")
-                # Попытка открыть фото (работает не на всех системах)
-                try:
-                    if os.name == 'nt':  # Windows
-                        os.startfile(temp_path)
-                    elif os.name == 'posix':  # macOS, Linux
-                        os.system(f'xdg-open "{temp_path}" 2>/dev/null || open "{temp_path}" 2>/dev/null')
-                    print("Фото открыто в просмотрщике")
-                except:
-                    print("Не удалось открыть фото автоматически")
-                return True
-        
+            temp_filename += ".jpg"
         elif media_type == "video":
-            # Для видео скачаем и предложим открыть
-            temp_path = await message.download_media(file=os.path.join(DOWNLOADS_DIR, "temp_video.mp4"))
-            if temp_path and os.path.exists(temp_path):
-                print(f"Видео сохранен: {temp_path}")
-                print("Для просмотра откройте файл в видеоплеере")
-                return True
-        
+            temp_filename += ".mp4"
         elif media_type == "sticker":
-            # Для стикеров скачаем и покажем информацию
-            temp_path = await message.download_media(file=os.path.join(DOWNLOADS_DIR, "temp_sticker.webp"))
-            if temp_path and os.path.exists(temp_path):
-                print(f"Стикер сохранен: {temp_path}")
-                # Попытка открыть стикер
-                try:
-                    if os.name == 'nt':  # Windows
-                        os.startfile(temp_path)
-                    elif os.name == 'posix':  # macOS, Linux
-                        os.system(f'xdg-open "{temp_path}" 2>/dev/null || open "{temp_path}" 2>/dev/null')
-                    print("Стикер открыт в просмотрщике")
-                except:
-                    print("Не удалось открыть стикер автоматически")
-                return True
-        
+            temp_filename += ".webp"
+        elif media_type == "voice":
+            temp_filename += ".ogg"
         else:
-            cprint(f"Просмотр {media_desc} не поддерживается в консоли", "warning")
-            print("Скачайте файл для просмотра в внешней программе")
+            temp_filename += ".tmp"
+        
+        temp_path = os.path.join(temp_dir, temp_filename)
+        
+        # Получаем размер файла
+        file_size = message.file.size if message.file else 0
+        
+        # Создаем прогресс-бар
+        progress_bar = download_progress.create_progress_bar(
+            f"Превью {media_desc}", 
+            file_size
+        )
+        
+        # Функция callback для обновления прогресса
+        def progress_callback(current, total):
+            download_progress.update_progress(current, total)
+        
+        cprint(f"👀 Загружаем для предпросмотра: {media_desc}", "info")
+        
+        # Скачиваем файл
+        download_path = await message.download_media(
+            file=temp_path,
+            progress_callback=progress_callback
+        )
+        
+        # Завершаем прогресс-бар
+        download_progress.finish()
+        
+        if not download_path:
+            cprint("❌ Не удалось загрузить файл для предпросмотра", "error")
+            return False
+        
+        cprint(f"✅ Файл загружен: {download_path}", "success")
+        
+        # Показываем медиа в зависимости от типа
+        if media_type == "photo":
+            return await preview_image(download_path)
+        elif media_type == "video":
+            return await preview_video(download_path)
+        elif media_type == "sticker":
+            return await preview_image(download_path)
+        else:
+            cprint(f"📄 Просмотр {media_desc} не поддерживается в консоли", "warning")
+            cprint(f"💾 Файл сохранен: {download_path}", "info")
+            return True
             
     except Exception as e:
-        print(f"Ошибка при просмотре медиа: {e}")
-    
-    return False
+        cprint(f"❌ Ошибка при просмотре медиа: {e}", "error")
+        download_progress.finish()
+        return False
+
+async def preview_image(file_path):
+    """Пытается открыть изображение в просмотрщике системы"""
+    try:
+        if os.path.exists(file_path):
+            cprint(f"🖼️ Изображение сохранено: {file_path}", "success")
+            
+            # Попытка открыть фото
+            try:
+                if os.name == 'nt':  # Windows
+                    os.startfile(file_path)
+                elif os.name == 'posix':  # macOS, Linux
+                    os.system(f'xdg-open "{file_path}" 2>/dev/null || open "{file_path}" 2>/dev/null')
+                cprint("👀 Изображение открыто в просмотрщике системы", "success")
+            except Exception as e:
+                cprint(f"⚠️ Не удалось открыть изображение автоматически: {e}", "warning")
+                cprint("📁 Файл сохранен, откройте его вручную", "info")
+            
+            return True
+    except Exception as e:
+        cprint(f"❌ Ошибка при предпросмотре изображения: {e}", "error")
+        return False
+
+async def preview_video(file_path):
+    """Показывает информацию о видеофайле"""
+    try:
+        if os.path.exists(file_path):
+            file_size = os.path.getsize(file_path)
+            cprint(f"🎥 Видео сохранено: {file_path}", "success")
+            cprint(f"💾 Размер: {format_file_size(file_size)}", "info")
+            cprint("📺 Для просмотра откройте файл в видеоплеере", "info")
+            return True
+    except Exception as e:
+        cprint(f"❌ Ошибка при предпросмотре видео: {e}", "error")
+        return False
 
 async def show_full_message(message, dialog):
     """Показывает полное содержимое сообщения"""
@@ -3688,6 +3837,9 @@ async def handler_new_message(event):
             print(f"\nНовое сообщение в канале {sender_name}{reply_info}{media_info}: {event.message.text or media_desc}")
 
 if __name__ == '__main__':
+    # Настраиваем обработчики сигналов
+    setup_signal_handlers()
+    
     # Загружаем конфигурацию
     config = load_config()
     folders = load_folders()
