@@ -4,3 +4,4 @@ pysocks>=1.7.1
 psutil>=6.0.0
 colorama>=0.4.6
 cryptography>=46.0.1
+tqdm>=4.67.1
