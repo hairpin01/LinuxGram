@@ -125,7 +125,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.066"
+VERSION = "1.9.067"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -3619,16 +3619,17 @@ async def main_improved():
                             cprint("Сообщение отправлено!", "success")
                 
                 elif action == '2':  # Ответить на сообщение
-                    try:
-                        msg_num = int(input("Номер сообщения для ответа: "))
-                        if 1 <= msg_num <= len(displayed_messages):
-                            # Правильный индекс сообщения
-                            reply_to_message = displayed_messages[msg_num - 1]
-                            print(f"Ответ на сообщение {msg_num}. Введите сообщение.")
-                        else:
-                            print("Неверный номер сообщения!")
-                    except ValueError:
-                        print("Введите число!")
+                  global reply_to_message  
+                  try:
+                    msg_num = int(input("Номер сообщения для ответа: "))
+                    if 1 <= msg_num <= len(displayed_messages):
+                      # Правильный индекс сообщения
+                      reply_to_message = displayed_messages[msg_num - 1]
+                      print(f"Ответ на сообщение {msg_num}. Введите сообщение.")
+                    else:
+                      print("Неверный номер сообщения!")
+                  except ValueError:
+                    print("Введите число!")
                 
                 elif action == '3':  # Отправить файл
                     # Используем проводник для выбора файла
@@ -3779,6 +3780,7 @@ async def main_improved():
                     break
                 
                 elif action.lower() == 'x' and reply_to_message:  # Отменить ответ
+                    global reply_to_message
                     reply_to_message = None
                     print("Режим ответа отменен")
                 
