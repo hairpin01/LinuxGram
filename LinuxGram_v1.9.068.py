@@ -125,7 +125,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.067"
+VERSION = "1.9.068"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -3452,7 +3452,7 @@ async def change_folder():
     cinput("\nНажмите Enter для продолжения...", "secondary")
 
 async def main_improved():
-    global API_ID, API_HASH, config, folders, current_folder  
+    global API_ID, API_HASH, config, folders, current_folder, reply_to_message  
     
     # Исправляем отсутствующие ключи конфигурации
     fix_missing_config_keys()
@@ -3619,7 +3619,6 @@ async def main_improved():
                             cprint("Сообщение отправлено!", "success")
                 
                 elif action == '2':  # Ответить на сообщение
-                  global reply_to_message  
                   try:
                     msg_num = int(input("Номер сообщения для ответа: "))
                     if 1 <= msg_num <= len(displayed_messages):
@@ -3780,7 +3779,6 @@ async def main_improved():
                     break
                 
                 elif action.lower() == 'x' and reply_to_message:  # Отменить ответ
-                    global reply_to_message
                     reply_to_message = None
                     print("Режим ответа отменен")
                 
