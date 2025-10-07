@@ -23,6 +23,12 @@ from telethon.tl import functions
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo, DocumentAttributeAudio
 from telethon.network import ConnectionTcpMTProxyAbridged
 # i use arch Linux btw
+#  _     _                   ____
+# | |   (_)_ __  _   ___  __/ ___|_ __ __ _ _ __ ___
+# | |   | | '_ \| | | \ \/ / |  _| '__/ _` | '_ ` _ \
+# | |___| | | | | |_| |>  <| |_| | | | (_| | | | | | |
+# |_____|_|_| |_|\__,_/_/\_\\____|_|  \__,_|_| |_| |_|
+# LinuxGram v1.9.068 download
 try:
     import socks
 except ImportError:
@@ -125,7 +131,7 @@ PROXY_CONFIG = {
 
 
 
-VERSION = "1.9.068"
+VERSION = "1.9.069"
 API_ID = 12345678 # и апи хэш
 API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
 SESSION_FILE = 'linuxgram.session'
@@ -1252,35 +1258,36 @@ async def show_participants(dialog):
         print(f"Ошибка при получении списка участников: {e}")
         cinput("\nНажмите Enter для возврата...", "secondary")
 
+
 async def search_contacts():
     """Поиск контактов по username, номеру телефона или имени"""
     global search_contacts_results
-    
+
     print_header("Поиск контактов")
     print("1. Поиск по username")
     print("2. Поиск по номеру телефона")
     print("3. Поиск по имени")
     cprint("0. Назад", "secondary")
-    
+
     choice = input("\nВыберите тип поиска: ")
-    
+
     if choice == '0':
         return
-    
+
     query = input("Введите запрос для поиска: ")
     if not query:
         print("Запрос не может быть пустым!")
         input("\nНажмите Enter для возврата...")
         return
-    
+
     search_contacts_results = []
-    
+
     try:
         if choice == '1':  # Поиск по username
             # Убираем @ если пользователь его ввел
             if query.startswith('@'):
                 query = query[1:]
-            
+
             try:
                 result = await client(functions.contacts.ResolveUsernameRequest(username=query))
                 if result.users:
@@ -1295,11 +1302,11 @@ async def search_contacts():
                 print(f"Ошибка при поиске по username: {e}")
                 cinput("\nНажмите Enter для возврата...", "secondary")
                 return
-        
+
         elif choice == '2':  # Поиск по номеру телефона
             # Очищаем номер от лишних символов
             phone = re.sub(r'[^0-9+]', '', query)
-            
+
             try:
                 # Импортируем контакт для поиска
                 result = await client(functions.contacts.ImportContactsRequest(
@@ -1310,10 +1317,10 @@ async def search_contacts():
                         last_name=""
                     )]
                 ))
-                
+
                 if result.users:
                     search_contacts_results = result.users
-                    
+
                     # Удаляем импортированный контакт
                     await client(functions.contacts.DeleteContactsRequest(id=result.users))
                 else:
@@ -1324,7 +1331,7 @@ async def search_contacts():
                 print(f"Ошибка при поиске по номеру телефона: {e}")
                 cinput("\nНажмите Enter для возврата...", "secondary")
                 return
-        
+
         elif choice == '3':  # Поиск по имени
             # Ищем в своих контактах
             try:
@@ -1342,25 +1349,25 @@ async def search_contacts():
                 print(f"Ошибка при получении контактов: {e}")
                 cinput("\nНажмите Enter для возврата...", "secondary")
                 return
-            
+
             if not search_contacts_results:
                 print("Контакты не найдены!")
                 cinput("\nНажмите Enter для возврата...", "secondary")
                 return
-        
+
         else:
             print("Неверный выбор!")
             cinput("\nНажмите Enter для возврата...", "secondary")
             return
-        
+
         # Показываем результаты поиска
         print_header("Результаты поиска")
-        
+
         if not search_contacts_results:
             print("Ничего не найдено!")
             cinput("\nНажмите Enter для возврата...", "secondary")
             return
-        
+
         for i, entity in enumerate(search_contacts_results):
             if isinstance(entity, types.User):
                 user_type = "🤖 Бот" if entity.bot else "👤 Пользователь"
@@ -1373,10 +1380,10 @@ async def search_contacts():
                     print(f"{i+1:2d}. 📢 Канал: {entity.title}")
             elif isinstance(entity, types.Chat):
                 print(f"{i+1:2d}. 👥 Группа: {entity.title}")
-        
+
         print("\nВведите номер для просмотра профиля или 0 для возврата:")
         choice = cinput("Ваш выбор: ", "info")
-        
+
         try:
             choice_idx = int(choice)
             if choice_idx == 0:
@@ -1386,15 +1393,14 @@ async def search_contacts():
                 if isinstance(entity, types.User):
                     await show_user_profile(entity)
                 elif isinstance(entity, (types.Channel, types.Chat)):
-                    # Для каналов и групп создаем временный диалог
-                    temp_dialog = types.Dialog(
-                        id=entity.id,
-                        name=entity.title,
-                        entity=entity,
-                        unread_count=0,
-                        unread_mentions_count=0,
-                        draft=None
-                    )
+                    # Создаем простой объект диалога без использования types.Dialog
+                    class SimpleDialog:
+                        def __init__(self, entity, name):
+                            self.entity = entity
+                            self.name = name
+                            self.id = entity.id
+
+                    temp_dialog = SimpleDialog(entity, entity.title)
                     await show_messages(temp_dialog, title=f"Информация о {entity.title}")
                 # После просмотра возвращаемся к результатам поиска
                 await search_contacts()
@@ -1403,8 +1409,8 @@ async def search_contacts():
                 cinput("\nНажмите Enter для возврата...", "secondary")
         except ValueError:
             print("Введите число!")
-            cinput("\nНажмите Enter для возврата...", "secondary")
-            
+            cinput("\nНажмитe Enter для возврата...", "secondary")
+
     except Exception as e:
         print(f"Ошибка при поиске: {e}")
         cinput("\nНажмите Enter для возврата...", "secondary")
