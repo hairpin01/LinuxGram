@@ -28,7 +28,6 @@ from telethon.network import ConnectionTcpMTProxyAbridged
 # | |   | | '_ \| | | \ \/ / |  _| '__/ _` | '_ ` _ \
 # | |___| | | | | |_| |>  <| |_| | | | (_| | | | | | |
 # |_____|_|_| |_|\__,_/_/\_\\____|_|  \__,_|_| |_| |_|
-# LinuxGram v1.9.068 download
 try:
     import socks
 except ImportError:
@@ -132,13 +131,13 @@ PROXY_CONFIG = {
 
 
 VERSION = "1.9.069"
-API_ID = 12345678 # и апи хэш
-API_HASH = 'TYPE_YOU_API_HASH' # тута апи хеш который вы получили на my.telegram.org 
+API_ID = 12345678 
+API_HASH = 'TYPE_YOU_API_HASH' 
 SESSION_FILE = 'linuxgram.session'
 DOWNLOADS_DIR = "downloads"
 CONFIG_FILE = "config.json"
 FOLDERS_FILE = "folders.json"
-PROXY_CACHE_FILE = "proxy_cache.json"  # Новый файл для кеширования прокси
+PROXY_CACHE_FILE = "proxy_cache.json"  
 
 client = None
 proxy_cache = {}
@@ -676,7 +675,7 @@ async def get_chat_info(dialog):
         cached_chat_info[dialog.id] = full_chat
         return full_chat
     except Exception as e:
-        print(f"Ошибка при получении информации о чате: {e}")
+        cprint(f"Ошибка при получении информации о чате: {e}", "error")
         return None
 
 async def get_user_status(user):
@@ -803,7 +802,7 @@ async def show_dialogs():
     cprint("p. Поиск контактов", "highlight")
     cprint("c. Создать группу/канал", "highlight")
     cprint("m. Управление папками", "highlight")
-    cprint("f. Сменить папку", "highlight")
+    cprint("f. Сменить папку", "info")
     
     return filtered_dialogs
 
@@ -2983,25 +2982,6 @@ async def show_summary():
     print(f"🌐 Язык интерфейса: {config['language']}")
     print(f"🎨 Тема: {config['appearance']['theme']}")
     print(f"💾 Автоскачивание: {'включено' if any(config['data']['auto_download'].values()) else 'выключено'}")
-    
-    # Показываем последние действия
-    print("\n📋 Доступные функции:")
-    print("  • Отправка и получение сообщений")
-    print("  • Поддержка стикеров и медиафайлов")
-    print("  • Ответы на сообщения и реакции")
-    print("  • Поиск по сообщениям")
-    print("  • Редактирование сообщений")
-    print("  • Скачивание файлов")
-    print("  • Просмотр участников групп/каналов")
-    print("  • Настройки конфиденциальности")
-    print("  • Настройки уведомлений")
-    print("  • Настройки внешнего вида")
-    print("  • Настройки данных и хранилища")
-    print("  • Смена языка интерфейса")
-    print("  • Архивирование чатов")
-    print("  • Поиск контактов")
-    print("  • Просмотр профилей пользователей")
-    
     print("\n" + "=" * 80)
     input("\nНажмите Enter для возврата...")
 
