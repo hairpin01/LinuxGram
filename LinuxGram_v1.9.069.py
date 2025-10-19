@@ -22,7 +22,7 @@ from telethon import TelegramClient, events, functions, types
 from telethon.tl import functions
 from telethon.tl.types import DocumentAttributeFilename, DocumentAttributeVideo, DocumentAttributeAudio
 from telethon.network import ConnectionTcpMTProxyAbridged
-# i use arch Linux btw
+# i use LinuxGram btw
 #  _     _                   ____
 # | |   (_)_ __  _   ___  __/ ___|_ __ __ _ _ __ ___
 # | |   | | '_ \| | | \ \/ / |  _| '__/ _` | '_ ` _ \
