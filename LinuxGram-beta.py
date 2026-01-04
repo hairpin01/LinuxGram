@@ -8,7 +8,7 @@
 #####################################################################################
 # beta is linuxgram!  #
 #######################
-
+__version__ = '1.0.010'
 import asyncio
 import os
 import json
@@ -261,7 +261,7 @@ class LinuxGramTUI:
         self.search_query = ""
         self.in_settings = False
 
-        self.title = urwid.Text("LinuxGram", align='center')
+        self.title = urwid.Text(f"LinuxGram Beta v{__version__}", align='center')
         self.header = urwid.Text("Dialogs")
 
         self.footer_help_text = (
