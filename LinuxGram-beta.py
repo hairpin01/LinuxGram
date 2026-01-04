@@ -8,7 +8,7 @@
 #####################################################################################
 # beta is linuxgram!  #
 #######################
-__version__ = '1.0.010'
+__version__ = '1.0.011'
 import asyncio
 import os
 import json
@@ -52,17 +52,18 @@ def save_config():
         json.dump(config, f, indent=2)
 
 class MessageWidget(urwid.WidgetWrap):
-    def __init__(self, message, is_selected=False, is_outgoing=False, reply_text=""):
+    def __init__(self, message, is_selected=False, is_outgoing=False, reply_text="", sender_name=""):
         self.message = message
         self.is_selected = is_selected
         self.is_outgoing = is_outgoing
         self.reply_text = reply_text
+        self.sender_name = sender_name
+        self.expanded = False
         super().__init__(self.build_widget())
 
     def build_widget(self):
         lines = []
 
-        # Reply info
         if self.reply_text:
             if len(self.reply_text) > 40:
                 preview = self.reply_text[:37] + "..."
@@ -71,7 +72,10 @@ class MessageWidget(urwid.WidgetWrap):
             reply_text = f"↩ ({preview})"
             lines.append(urwid.AttrMap(urwid.Text(reply_text), 'reply'))
 
-        # Message content
+        if self.sender_name:
+            sender_text = f"{self.sender_name}:"
+            lines.append(urwid.AttrMap(urwid.Text(sender_text), 'sender'))
+
         if self.message.text:
             content = self.message.text
         elif self.message.media:
@@ -88,32 +92,42 @@ class MessageWidget(urwid.WidgetWrap):
         else:
             content = "[Empty]"
 
-        # Truncate long messages
-        if len(content) > 80:
-            content = content[:77] + "..."
+        show_expand_button = len(content) > 80
 
-        # Time
+        if not self.expanded and len(content) > 80:
+            display_content = content[:77] + "..."
+        else:
+            display_content = content
+
         time_str = self.message.date.strftime("%H:%M")
-        time_text = f" [{time_str}]"
 
-        # Build content with time
-        content_widget = urwid.Columns([
-            (len(content), urwid.Text(content)),
-            ('pack', urwid.Text(time_text))
-        ])
+        columns_widgets = [
+            ('weight', 1, urwid.Text(display_content)),
+            ('pack', urwid.Text(f" [{time_str}]"))
+        ]
+
+        if show_expand_button:
+            expand_symbol = "⬆️" if self.expanded else "⬇️"
+            expand_text = urwid.Text(f" [{expand_symbol}]")
+            expand_widget = urwid.AttrMap(expand_text, 'button')
+            columns_widgets.append(('pack', expand_widget))
+
+        content_widget = urwid.Columns(columns_widgets)
 
         lines.append(content_widget)
 
-        # Build pile
         widget = urwid.Pile(lines)
 
-        # Apply selection style
         if self.is_selected:
             widget = urwid.AttrMap(widget, 'selected')
         elif self.is_outgoing:
             widget = urwid.AttrMap(widget, 'my_message')
 
         return widget
+
+    def toggle_expand(self):
+        self.expanded = not self.expanded
+        self._w = self.build_widget()
 
 class DialogWidget(urwid.WidgetWrap):
     def __init__(self, dialog, index, is_selected=False, callback=None):
@@ -122,7 +136,6 @@ class DialogWidget(urwid.WidgetWrap):
         self.is_selected = is_selected
         self.callback = callback
 
-        # Create button with dialog info
         dialog_type = ""
         if isinstance(self.dialog.entity, types.Channel):
             if getattr(self.dialog.entity, 'megagroup', False):
@@ -138,16 +151,16 @@ class DialogWidget(urwid.WidgetWrap):
         if self.dialog.unread_count > 0:
             name = f"● {name} ({self.dialog.unread_count})"
 
-        self.button = urwid.Button(dialog_type + name)
-        urwid.connect_signal(self.button, 'click', self.on_click)
+        button_text = dialog_type + name
+        self.button = urwid.Button(button_text)
 
-        # Apply styling
         if self.is_selected:
-            widget = urwid.AttrMap(self.button, 'selected')
+            wrapped_button = urwid.AttrMap(self.button, 'selected')
         else:
-            widget = urwid.AttrMap(self.button, 'dialog_name')
+            wrapped_button = urwid.AttrMap(self.button, 'dialog_name')
 
-        super().__init__(widget)
+        urwid.connect_signal(self.button, 'click', self.on_click)
+        super().__init__(wrapped_button)
 
     def on_click(self, button):
         if self.callback:
@@ -157,7 +170,6 @@ class SettingsWidget(urwid.WidgetWrap):
     def __init__(self, parent):
         self.parent = parent
 
-        # Create checkboxes
         self.private_chats = urwid.CheckBox("Private chats",
                                            state=config['notifications']['private_chats'])
         self.groups = urwid.CheckBox("Groups",
@@ -174,14 +186,12 @@ class SettingsWidget(urwid.WidgetWrap):
         self.voice = urwid.CheckBox("Voice messages",
                                    state=config['data']['auto_download']['voice_messages'])
 
-        # Create save and cancel buttons
         self.save_button = urwid.Button("Save")
         urwid.connect_signal(self.save_button, 'click', self.save_settings)
 
         self.cancel_button = urwid.Button("Cancel")
         urwid.connect_signal(self.cancel_button, 'click', self.cancel_settings)
 
-        # Layout
         content = urwid.Pile([
             urwid.Text("Settings", align='center'),
             urwid.Divider(),
@@ -226,11 +236,12 @@ class LinuxGramTUI:
         self.palette = [
             ('header', 'white', 'dark magenta'),
             ('footer', 'white', 'dark gray'),
-            ('selected', 'white', 'dark magenta'),
+            ('selected', 'white', 'dark cyan'),
             ('unread', 'yellow,bold', ''),
             ('my_message', 'light green', ''),
             ('their_message', 'white', ''),
             ('reply', 'light cyan', ''),
+            ('sender', 'yellow', ''),
             ('error', 'light red', ''),
             ('success', 'light green', ''),
             ('input', 'white', 'dark cyan'),
@@ -240,13 +251,14 @@ class LinuxGramTUI:
             ('title', 'bold', ''),
             ('loading', 'yellow', 'dark magenta'),
             ('search_highlight', 'black', 'yellow'),
-            ('button', 'white', 'dark magenta'),
+            ('button', 'light blue', ''),
             ('button_focus', 'black', 'light gray'),
         ]
 
         self.dialogs = []
         self.filtered_dialogs = []
         self.messages = []
+        self.message_widgets = []
         self.current_dialog_index = 0
         self.current_message_index = 0
         self.current_dialog = None
@@ -266,7 +278,7 @@ class LinuxGramTUI:
 
         self.footer_help_text = (
             "Q: Quit | ↑↓/PgUp/PgDn: Select | Enter: Open/Message | ←: Back | R: Reply | "
-            "F: File | D: Download | /: Search | S: Settings | C: Search chats"
+            "F: File | D: Download | /: Search | S: Settings | C: Search chats | E: Expand"
         )
         self.footer_help = urwid.Text(self.footer_help_text)
 
@@ -337,10 +349,12 @@ class LinuxGramTUI:
 
             self.messages = await client.get_messages(dialog.entity, limit=limit)
             self.messages.reverse()
+            self.message_widgets = []
 
-            # Получаем текст ответов для сообщений
             messages_dict = {msg.id: msg for msg in self.messages}
             for msg in self.messages:
+                msg.sender_name = await self.get_sender_name(msg)
+
                 if hasattr(msg, 'reply_to') and msg.reply_to and hasattr(msg.reply_to, 'reply_to_msg_id'):
                     reply_id = msg.reply_to.reply_to_msg_id
                     if reply_id in messages_dict:
@@ -355,7 +369,6 @@ class LinuxGramTUI:
 
             self.refresh_message_list()
 
-            # Ключевое изменение: меняем view_mode И меняем body фрейма
             self.view_mode = "messages"
             self.header.set_text(f"Chat: {dialog.name}")
             self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
@@ -364,6 +377,22 @@ class LinuxGramTUI:
 
         except Exception as e:
             self.set_status(f"Error: {e}", 'error')
+
+    async def get_sender_name(self, msg):
+        try:
+            sender = await msg.get_sender()
+            if isinstance(sender, types.User):
+                name = sender.first_name or ""
+                if sender.last_name:
+                    name += f" {sender.last_name}"
+                if sender.username:
+                    name += f" (@{sender.username})"
+                return name.strip() or "User"
+            elif isinstance(sender, (types.Channel, types.Chat)):
+                return sender.title or "Channel"
+            return "Unknown"
+        except:
+            return "Unknown"
 
     def select_dialog(self, index):
         self.current_dialog_index = index
@@ -480,9 +509,10 @@ class LinuxGramTUI:
                 self.search_results = list(reversed(results))
                 self.messages = self.search_results
 
-                # Получаем текст ответов для найденных сообщений
                 messages_dict = {msg.id: msg for msg in self.messages}
                 for msg in self.messages:
+                    msg.sender_name = await self.get_sender_name(msg)
+
                     if hasattr(msg, 'reply_to') and msg.reply_to and hasattr(msg.reply_to, 'reply_to_msg_id'):
                         reply_id = msg.reply_to.reply_to_msg_id
                         if reply_id in messages_dict:
@@ -552,19 +582,34 @@ class LinuxGramTUI:
 
     def refresh_message_list(self):
         self.message_list.clear()
+        self.message_widgets.clear()
 
         for i, msg in enumerate(self.messages):
             reply_text = getattr(msg, 'reply_text', "")
+            sender_name = getattr(msg, 'sender_name', "")
+
+            if msg.out:
+                sender_name = ""
+
             widget = MessageWidget(
                 msg,
                 is_selected=(i == self.current_message_index),
                 is_outgoing=msg.out,
-                reply_text=reply_text
+                reply_text=reply_text,
+                sender_name=sender_name
             )
             self.message_list.append(widget)
+            self.message_widgets.append(widget)
 
         if self.urwid_loop:
             self.urwid_loop.draw_screen()
+
+    def toggle_expand_message(self):
+        if 0 <= self.current_message_index < len(self.message_widgets):
+            widget = self.message_widgets[self.current_message_index]
+            widget.toggle_expand()
+            self.refresh_message_list()
+            self.message_listbox.focus_position = self.current_message_index
 
     def handle_input_key(self, key):
         if key == 'enter':
@@ -595,18 +640,20 @@ class LinuxGramTUI:
 
         if isinstance(key, tuple) and len(key) >= 2 and key[0] == 'mouse press':
             button = key[1]
-            pos = key[2] if len(key) > 2 else 0
-            if button == 1:  # Left click
+            if button == 1:
                 if self.view_mode == "dialogs" and self.filtered_dialogs:
-                    dialog_index = min(pos, len(self.filtered_dialogs) - 1)
-                    if 0 <= dialog_index < len(self.filtered_dialogs):
-                        self.select_dialog(dialog_index)
+                    if self.urwid_loop:
+                        focus_pos = self.dialog_listbox.focus_position
+                        row = focus_pos
+                        if 0 <= row < len(self.filtered_dialogs):
+                            self.select_dialog(row)
                 elif self.view_mode == "messages" and self.messages:
-                    message_index = min(pos // 2, len(self.messages) - 1)
-                    if 0 <= message_index < len(self.messages):
-                        self.current_message_index = message_index
-                        self.refresh_message_list()
-                        self.message_listbox.focus_position = self.current_message_index
+                    if self.urwid_loop:
+                        focus_pos = self.message_listbox.focus_position
+                        if 0 <= focus_pos < len(self.messages):
+                            self.current_message_index = focus_pos
+                            self.refresh_message_list()
+                            self.message_listbox.focus_position = focus_pos
             elif button in (4, 5) and self.urwid_loop:
                 direction = 'up' if button == 4 else 'down'
                 cols, rows = self.urwid_loop.screen.get_cols_rows()
@@ -703,6 +750,8 @@ class LinuxGramTUI:
                 self.show_input("Search messages: ", self.search_messages)
             elif key == 's' or key == 'S':
                 self.show_settings()
+            elif key == 'e' or key == 'E':
+                self.toggle_expand_message()
 
     def show_settings(self):
         self.in_settings = True
@@ -727,10 +776,8 @@ class LinuxGramTUI:
                 sender_name = sender.first_name if sender else "Unknown"
                 self.set_status(f"New message from {sender_name}", 'success')
 
-                # Update dialog list if open
                 if self.view_mode == "dialogs":
                     await self.load_dialogs()
-                # Update messages if in the same chat
                 elif self.view_mode == "messages" and self.current_dialog and event.chat_id == self.current_dialog.entity.id:
                     await self.load_messages(self.current_dialog)
 
