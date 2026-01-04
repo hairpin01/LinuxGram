@@ -224,9 +224,9 @@ class LinuxGramTUI:
     def __init__(self, loop):
         self.loop = loop
         self.palette = [
-            ('header', 'white', 'dark magenta'),  # Изменен с dark blue на dark magenta
+            ('header', 'white', 'dark magenta'),
             ('footer', 'white', 'dark gray'),
-            ('selected', 'white', 'dark magenta'),  # Изменен с light gray на dark magenta
+            ('selected', 'white', 'dark magenta'),
             ('unread', 'yellow,bold', ''),
             ('my_message', 'light green', ''),
             ('their_message', 'white', ''),
@@ -236,11 +236,11 @@ class LinuxGramTUI:
             ('input', 'white', 'dark cyan'),
             ('dialog_name', 'white', ''),
             ('preview', 'light gray', ''),
-            ('status', 'yellow', 'dark magenta'),  # Изменен с dark blue на dark magenta
+            ('status', 'yellow', 'dark magenta'),
             ('title', 'bold', ''),
-            ('loading', 'yellow', 'dark magenta'),  # Изменен с dark blue на dark magenta
+            ('loading', 'yellow', 'dark magenta'),
             ('search_highlight', 'black', 'yellow'),
-            ('button', 'white', 'dark magenta'),  # Изменен с dark blue на dark magenta
+            ('button', 'white', 'dark magenta'),
             ('button_focus', 'black', 'light gray'),
         ]
 
@@ -335,15 +335,6 @@ class LinuxGramTUI:
             self.current_dialog = dialog
             limit = config.get("interface", {}).get("messages_limit", 50)
 
-            # Сохраняем текущую позицию прокрутки
-            if self.view_mode == "messages" and self.current_dialog == dialog:
-                focus_widget, focus_idx = self.message_listbox.get_focus()
-                if focus_idx is not None:
-                    # Сохраняем относительную позицию
-                    self.scroll_position = focus_idx
-                else:
-                    self.scroll_position = len(self.messages) - 1
-
             self.messages = await client.get_messages(dialog.entity, limit=limit)
             self.messages.reverse()
 
@@ -363,15 +354,14 @@ class LinuxGramTUI:
                             msg.reply_text = "[Media]"
 
             self.refresh_message_list()
+
+            # Ключевое изменение: меняем view_mode И меняем body фрейма
             self.view_mode = "messages"
             self.header.set_text(f"Chat: {dialog.name}")
+            self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
+
             self.set_status(f"Loaded {len(self.messages)} messages", 'success')
 
-            # Восстанавливаем позицию прокрутки
-            if hasattr(self, 'scroll_position') and self.scroll_position < len(self.messages):
-                self.current_message_index = min(self.scroll_position, len(self.messages) - 1)
-                self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
         except Exception as e:
             self.set_status(f"Error: {e}", 'error')
 
@@ -421,17 +411,12 @@ class LinuxGramTUI:
             return
 
         try:
-            # Сохраняем позицию перед отправкой
-            focus_widget, focus_idx = self.message_listbox.get_focus()
-            current_focus = focus_idx if focus_idx is not None else len(self.messages) - 1
-
             if self.reply_to_message:
                 await client.send_message(self.current_dialog.entity, text, reply_to=self.reply_to_message.id)
                 self.reply_to_message = None
             else:
                 await client.send_message(self.current_dialog.entity, text)
 
-            # Обновляем сообщения без индикатора загрузки
             await self.load_messages(self.current_dialog)
             self.set_status("Message sent", 'success')
 
@@ -444,10 +429,6 @@ class LinuxGramTUI:
             return
 
         try:
-            # Сохраняем позицию перед отправкой
-            focus_widget, focus_idx = self.message_listbox.get_focus()
-            current_focus = focus_idx if focus_idx is not None else len(self.messages) - 1
-
             await client.send_file(self.current_dialog.entity, file_path)
             await self.load_messages(self.current_dialog)
             self.set_status("File sent", 'success')
@@ -494,10 +475,6 @@ class LinuxGramTUI:
 
     async def search_messages(self, query):
         try:
-            # Сохраняем текущую позицию
-            focus_widget, focus_idx = self.message_listbox.get_focus()
-            current_focus = focus_idx if focus_idx is not None else 0
-
             results = await client.get_messages(self.current_dialog.entity, search=query, limit=20)
             if results:
                 self.search_results = list(reversed(results))
@@ -522,8 +499,9 @@ class LinuxGramTUI:
                 self.header.set_text(f"Search: '{query}'")
                 self.set_status(f"Found {len(results)} messages", 'success')
 
-                # Восстанавливаем позицию
-                self.message_listbox.set_focus(0)
+                self.message_listbox.focus_position = 0
+                self.current_message_index = 0
+                self.refresh_message_list()
             else:
                 self.set_status("No results found", 'error')
         except Exception as e:
@@ -628,7 +606,7 @@ class LinuxGramTUI:
                     if 0 <= message_index < len(self.messages):
                         self.current_message_index = message_index
                         self.refresh_message_list()
-                        self.message_listbox.set_focus(self.current_message_index)
+                        self.message_listbox.focus_position = self.current_message_index
             elif button in (4, 5) and self.urwid_loop:
                 direction = 'up' if button == 4 else 'down'
                 cols, rows = self.urwid_loop.screen.get_cols_rows()
@@ -642,26 +620,30 @@ class LinuxGramTUI:
             if key == 'up' and self.current_dialog_index > 0:
                 self.current_dialog_index -= 1
                 self.refresh_dialog_list()
+                self.dialog_listbox.focus_position = self.current_dialog_index
             elif key == 'down' and self.current_dialog_index < len(self.filtered_dialogs) - 1:
                 self.current_dialog_index += 1
                 self.refresh_dialog_list()
+                self.dialog_listbox.focus_position = self.current_dialog_index
             elif key == 'page up':
                 self.current_dialog_index = max(0, self.current_dialog_index - 10)
                 self.refresh_dialog_list()
+                self.dialog_listbox.focus_position = self.current_dialog_index
             elif key == 'page down':
                 self.current_dialog_index = min(len(self.filtered_dialogs) - 1, self.current_dialog_index + 10)
                 self.refresh_dialog_list()
+                self.dialog_listbox.focus_position = self.current_dialog_index
             elif key == 'enter':
                 if self.filtered_dialogs:
                     self.select_dialog(self.current_dialog_index)
             elif key == 'home':
                 self.current_dialog_index = 0
                 self.refresh_dialog_list()
-                self.dialog_listbox.set_focus(0)
+                self.dialog_listbox.focus_position = 0
             elif key == 'end':
                 self.current_dialog_index = len(self.filtered_dialogs) - 1
                 self.refresh_dialog_list()
-                self.dialog_listbox.set_focus(self.current_dialog_index)
+                self.dialog_listbox.focus_position = self.current_dialog_index
             elif key == 'c' or key == 'C':
                 self.show_input("Search dialogs: ", self.search_dialogs)
             elif key == 'p' or key == 'P':
@@ -673,27 +655,27 @@ class LinuxGramTUI:
             if key == 'up' and self.current_message_index > 0:
                 self.current_message_index -= 1
                 self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
+                self.message_listbox.focus_position = self.current_message_index
             elif key == 'down' and self.current_message_index < len(self.messages) - 1:
                 self.current_message_index += 1
                 self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
+                self.message_listbox.focus_position = self.current_message_index
             elif key == 'page up':
                 self.current_message_index = max(0, self.current_message_index - 10)
                 self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
+                self.message_listbox.focus_position = self.current_message_index
             elif key == 'page down':
                 self.current_message_index = min(len(self.messages) - 1, self.current_message_index + 10)
                 self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
+                self.message_listbox.focus_position = self.current_message_index
             elif key == 'home':
                 self.current_message_index = 0
                 self.refresh_message_list()
-                self.message_listbox.set_focus(0)
+                self.message_listbox.focus_position = 0
             elif key == 'end':
                 self.current_message_index = len(self.messages) - 1
                 self.refresh_message_list()
-                self.message_listbox.set_focus(self.current_message_index)
+                self.message_listbox.focus_position = self.current_message_index
             elif key == 'left':
                 self.view_mode = "dialogs"
                 self.current_message_index = 0
