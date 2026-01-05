@@ -7,7 +7,7 @@
 #####################################################################################
 # beta is linuxgram!  #
 #######################
-__version__ = '1.0.023'
+__version__ = '1.0.025'
 import asyncio
 import os
 import json
@@ -217,6 +217,7 @@ class LoginWidget(urwid.WidgetWrap):
             ])
 
         self._w.original_widget = urwid.Pile(widgets)
+        self.parent.refresh_ui()
 
     def next_step(self, button):
         if self.step == 1:
@@ -478,16 +479,25 @@ class SearchWidget(urwid.WidgetWrap):
         if not query:
             self.parent.filtered_dialogs = self.parent.dialogs.copy()
             self.parent.set_status("Search cleared", 'status')
+            self.parent.close_search()
         else:
-            self.parent.filtered_dialogs = [
-                dialog for dialog in self.parent.dialogs
-                if dialog.name and query.lower() in dialog.name.lower()
-            ]
-            self.parent.set_status(f"Found {len(self.parent.filtered_dialogs)} dialogs", 'success')
+            filtered = []
+            for dialog in self.parent.dialogs:
+                if dialog.name and query.lower() in dialog.name.lower():
+                    filtered.append(dialog)
+
+            if not filtered:
+                self.parent.set_status(f"No dialogs found for '{query}'", 'error')
+                self.parent.filtered_dialogs = self.parent.dialogs.copy()
+            else:
+                self.parent.filtered_dialogs = filtered
+                self.parent.set_status(f"Found {len(filtered)} dialogs", 'success')
+
+            self.parent.close_search()
 
         self.parent.current_dialog_index = 0
         self.parent.refresh_dialog_list()
-        self.parent.close_search()
+        self.parent.refresh_ui()
 
     def cancel_search(self, button):
         self.parent.filtered_dialogs = self.parent.dialogs.copy()
@@ -495,6 +505,7 @@ class SearchWidget(urwid.WidgetWrap):
         self.parent.refresh_dialog_list()
         self.parent.set_status("Search cancelled", 'status')
         self.parent.close_search()
+        self.parent.refresh_ui()
 
 class FileBrowserWidget(urwid.WidgetWrap):
     def __init__(self, parent, callback):
@@ -513,13 +524,14 @@ class FileBrowserWidget(urwid.WidgetWrap):
         urwid.connect_signal(self.cancel_button, 'click', self.cancel)
 
         self.file_list = urwid.SimpleFocusListWalker([])
-        self.listbox = urwid.ListBox(self.file_list)
 
-        content = urwid.Pile([
+        header_widget = urwid.Pile([
             urwid.AttrMap(self.header, 'header'),
             urwid.AttrMap(self.path_display, 'title'),
-            urwid.Divider(),
-            urwid.AttrMap(self.listbox, 'body'),
+            urwid.Divider()
+        ])
+
+        footer_widget = urwid.Pile([
             urwid.Divider(),
             urwid.Columns([
                 ('weight', 1, urwid.AttrMap(self.select_button, 'button')),
@@ -527,7 +539,16 @@ class FileBrowserWidget(urwid.WidgetWrap):
             ])
         ])
 
-        super().__init__(urwid.Filler(content, 'top'))
+        self.listbox = urwid.ListBox(self.file_list)
+        body_widget = urwid.AttrMap(self.listbox, 'body')
+
+        content = urwid.Frame(
+            header=header_widget,
+            body=body_widget,
+            footer=footer_widget
+        )
+
+        super().__init__(content)
         self.load_directory()
 
     def load_directory(self):
@@ -539,46 +560,62 @@ class FileBrowserWidget(urwid.WidgetWrap):
             self.file_list.append(urwid.AttrMap(item, 'dialog_name'))
 
         try:
-            for item in sorted(self.current_dir.iterdir()):
+            dirs = []
+            files = []
+
+            for item in self.current_dir.iterdir():
                 if item.is_dir():
-                    name = f"📁 {item.name}/"
-                    button = urwid.Button(name)
-                    urwid.connect_signal(button, 'click', self.enter_directory, item)
+                    dirs.append(item)
                 else:
-                    size = item.stat().st_size
-                    if size < 1024:
-                        size_str = f"{size} B"
-                    elif size < 1024*1024:
-                        size_str = f"{size/1024:.1f} KB"
-                    elif size < 1024*1024*1024:
-                        size_str = f"{size/(1024*1024):.1f} MB"
-                    else:
-                        size_str = f"{size/(1024*1024*1024):.1f} GB"
+                    files.append(item)
 
-                    name = f"📄 {item.name} ({size_str})"
-                    button = urwid.Button(name)
-                    urwid.connect_signal(button, 'click', self.select_item, item)
+            dirs.sort(key=lambda x: x.name.lower())
+            files.sort(key=lambda x: x.name.lower())
 
+            for item in dirs:
+                name = f"📁 {item.name}/"
+                button = urwid.Button(name)
+                urwid.connect_signal(button, 'click', lambda button, path=item: self.enter_directory(path))
+                self.file_list.append(urwid.AttrMap(button, 'dialog_name'))
+
+            for item in files:
+                size = item.stat().st_size
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024*1024:
+                    size_str = f"{size/1024:.1f} KB"
+                elif size < 1024*1024*1024:
+                    size_str = f"{size/(1024*1024):.1f} MB"
+                else:
+                    size_str = f"{size/(1024*1024*1024):.1f} GB"
+
+                name = f"📄 {item.name} ({size_str})"
+                button = urwid.Button(name)
+                urwid.connect_signal(button, 'click', lambda button, path=item: self.select_item(path))
                 self.file_list.append(urwid.AttrMap(button, 'dialog_name'))
 
         except Exception as e:
             self.file_list.append(urwid.Text(f"Error: {e}", align='center'))
+
+        self.parent.refresh_ui()
 
     def go_up(self, button):
         self.current_dir = self.current_dir.parent
         self.path_display.set_text(str(self.current_dir))
         self.load_directory()
 
-    def enter_directory(self, button, directory):
+    def enter_directory(self, directory):
         self.current_dir = directory
         self.path_display.set_text(str(self.current_dir))
         self.load_directory()
 
-    def select_item(self, button, file_path):
+    def select_item(self, file_path):
         self.selected_file = file_path
         for i, item in enumerate(self.file_list):
-            if item.original_widget == button:
-                self.listbox.set_focus(i)
+            if hasattr(item, 'original_widget') and item.original_widget.label == f"📄 {file_path.name}":
+                if self.listbox.body:
+                    self.listbox.set_focus(i)
+                    self.parent.refresh_ui()
                 break
 
     def select_file(self, button):
@@ -587,6 +624,7 @@ class FileBrowserWidget(urwid.WidgetWrap):
             self.parent.close_file_browser()
         else:
             self.parent.set_status("Please select a file first", 'error')
+            self.parent.refresh_ui()
 
     def cancel(self, button):
         self.parent.close_file_browser()
@@ -762,12 +800,22 @@ class LinuxGramTUI:
         try:
             self.urwid_loop.run()
         except KeyboardInterrupt:
+            pass
+        finally:
             self.exit_app()
+
+    def refresh_ui(self):
+        if self.urwid_loop:
+            try:
+                self.urwid_loop.draw_screen()
+            except:
+                pass
 
     def show_login_screen(self):
         self.login_widget = LoginWidget(self)
         self.frame.body = self.login_widget
         self.header.set_text("Login to Telegram")
+        self.refresh_ui()
 
     async def init_client(self):
         try:
@@ -912,8 +960,15 @@ class LinuxGramTUI:
             except Exception:
                 continue
 
-    async def load_messages(self, dialog):
+    async def load_messages(self, dialog, keep_position=False):
         try:
+            old_focus_position = None
+            old_message_id = None
+
+            if keep_position and self.messages and self.current_message_index < len(self.messages):
+                old_focus_position = self.current_message_index
+                old_message_id = self.messages[old_focus_position].id
+
             self.current_dialog = dialog
             limit = config.get("interface", {}).get("messages_limit", 50)
 
@@ -956,8 +1011,19 @@ class LinuxGramTUI:
             self.set_status(f"Loaded {len(self.messages)} messages", 'success')
 
             if self.messages:
-                self.current_message_index = len(self.messages) - 1
-                self.message_list.set_focus(self.current_message_index)
+                if keep_position and old_message_id:
+                    for i, msg in enumerate(self.messages):
+                        if msg.id == old_message_id:
+                            self.current_message_index = i
+                            self.message_list.set_focus(i)
+                            break
+                    else:
+                        self.current_message_index = len(self.messages) - 1
+                        self.message_list.set_focus(self.current_message_index)
+                else:
+                    self.current_message_index = len(self.messages) - 1
+                    self.message_list.set_focus(self.current_message_index)
+
                 self.refresh_message_list()
 
         except Exception as e:
@@ -988,18 +1054,20 @@ class LinuxGramTUI:
         dialog = self.filtered_dialogs[index]
         if not hasattr(dialog, 'entity'):
             self.set_status("Cannot open this dialog", 'error')
+            self.refresh_ui()
             return
 
         self.current_dialog_index = index
         self.refresh_dialog_list()
 
-        self.loop.create_task(self.load_messages(dialog))
+        self.loop.create_task(self.load_messages(dialog, keep_position=False))
 
     def refresh_dialog_list(self):
         self.dialog_list.clear()
 
         if not self.filtered_dialogs:
             self.dialog_list.append(urwid.Text("No dialogs found", align='center'))
+            self.refresh_ui()
             return
 
         for i, dialog in enumerate(self.filtered_dialogs):
@@ -1016,8 +1084,10 @@ class LinuxGramTUI:
             )
             self.dialog_list.append(widget)
 
-        if self.filtered_dialogs:
+        if self.dialog_list:
             self.dialog_list.set_focus(self.current_dialog_index)
+
+        self.refresh_ui()
 
     def refresh_message_list(self):
         self.message_list.clear()
@@ -1025,6 +1095,7 @@ class LinuxGramTUI:
 
         if not self.messages:
             self.message_list.append(urwid.Text("No messages", align='center'))
+            self.refresh_ui()
             return
 
         for i, msg in enumerate(self.messages):
@@ -1041,8 +1112,10 @@ class LinuxGramTUI:
             self.message_list.append(widget)
             self.message_widgets.append(widget)
 
-        if self.messages:
+        if self.message_list:
             self.message_list.set_focus(self.current_message_index)
+
+        self.refresh_ui()
 
     def set_status(self, text, style="status"):
         self.footer_status.set_text(f" {text} ")
@@ -1053,6 +1126,8 @@ class LinuxGramTUI:
         else:
             self.footer_status_am.set_attr_map({None: style if style else 'footer'})
 
+        self.refresh_ui()
+
     def show_input(self, prompt, callback):
         self.input_mode = True
         self.input_prompt = prompt
@@ -1060,11 +1135,13 @@ class LinuxGramTUI:
         self.input_edit.set_caption(prompt)
         self.input_edit.set_edit_text("")
         self.frame.footer = self.input_widget
+        self.refresh_ui()
 
     def hide_input(self):
         self.input_mode = False
         self.frame.footer = urwid.AttrMap(self.footer_widget, 'footer')
         self.input_callback = None
+        self.refresh_ui()
 
     def handle_input_key(self, key):
         if key == 'enter':
@@ -1086,9 +1163,14 @@ class LinuxGramTUI:
 
         try:
             if self.reply_to_message:
-                await self.client.send_message(self.current_dialog.entity, text, reply_to=self.reply_to_message.id)
+                await self.client.send_message(
+                    self.current_dialog.entity,
+                    text,
+                    reply_to=self.reply_to_message.id
+                )
                 self.reply_to_message = None
                 self.reply_mode = False
+                self.set_status("Reply sent", 'success')
             elif self.edit_message:
                 await self.client.edit_message(self.current_dialog.entity, self.edit_message, text)
                 self.edit_message = None
@@ -1096,10 +1178,9 @@ class LinuxGramTUI:
                 self.set_status("Message edited", 'success')
             else:
                 await self.client.send_message(self.current_dialog.entity, text)
-
-            await self.load_messages(self.current_dialog)
-            if not self.edit_message:
                 self.set_status("Message sent", 'success')
+
+            await self.load_messages(self.current_dialog, keep_position=True)
         except Exception as e:
             self.set_status(f"Error: {e}", 'error')
             print(f"Send message error: {e}")
@@ -1124,7 +1205,7 @@ class LinuxGramTUI:
                 self.set_status(f"Sending file: {os.path.basename(file_path)}...", 'status')
                 await self.client.send_file(self.current_dialog.entity, file_path)
 
-            await self.load_messages(self.current_dialog)
+            await self.load_messages(self.current_dialog, keep_position=True)
             self.set_status(f"File sent: {os.path.basename(file_path)}", 'success')
 
         except Exception as e:
@@ -1183,7 +1264,7 @@ class LinuxGramTUI:
 
     async def search_messages(self, query):
         if not query or not query.strip():
-            await self.load_messages(self.current_dialog)
+            await self.load_messages(self.current_dialog, keep_position=False)
             self.set_status("Search cleared", 'status')
             return
 
@@ -1235,7 +1316,11 @@ class LinuxGramTUI:
             return
 
         try:
-            contacts = await self.client.get_contacts()
+            from telethon.tl.functions.contacts import GetContactsRequest
+
+            contacts_result = await self.client(GetContactsRequest(hash=0))
+            contacts = contacts_result.users if hasattr(contacts_result, 'users') else []
+
             if not contacts:
                 self.set_status("No contacts found", 'status')
                 return
@@ -1280,15 +1365,18 @@ class LinuxGramTUI:
         self.in_search = True
         self.search_widget = SearchWidget(self)
         self.frame.body = self.search_widget
+        self.refresh_ui()
 
     def close_search(self):
         self.in_search = False
         self.frame.body = urwid.AttrMap(self.dialog_listbox, 'body')
+        self.refresh_ui()
 
     def show_file_browser(self):
         self.in_file_browser = True
         self.file_browser = FileBrowserWidget(self, self.send_file)
         self.frame.body = self.file_browser
+        self.refresh_ui()
 
     def close_file_browser(self):
         self.in_file_browser = False
@@ -1296,6 +1384,7 @@ class LinuxGramTUI:
             self.frame.body = urwid.AttrMap(self.dialog_listbox, 'body')
         else:
             self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
+        self.refresh_ui()
 
     def handle_keypress(self, key):
         if isinstance(key, tuple):
@@ -1333,13 +1422,15 @@ class LinuxGramTUI:
 
         if self.in_search:
             if key == 'esc':
-                self.search_widget.cancel_search(None)
+                self.close_search()
+                return
             return
 
         if self.in_file_browser:
             if key == 'esc':
                 self.close_file_browser()
                 self.set_status("File browser closed", 'status')
+                return
             return
 
         if self.show_help:
@@ -1349,15 +1440,18 @@ class LinuxGramTUI:
             else:
                 self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
             self.frame.footer = urwid.AttrMap(self.footer_widget, 'footer')
+            self.refresh_ui()
             return
 
         if key in ('q', 'Q'):
             self.exit_app()
+            return
 
         if key in ('h', 'H'):
             if not self.show_help:
                 self.show_help = True
                 self.frame.body = self.help_widget
+                self.refresh_ui()
                 return
 
         if self.view_mode == "dialogs":
@@ -1402,9 +1496,25 @@ class LinuxGramTUI:
             elif key == 'enter':
                 self.show_input("Message: ", self.send_message)
             elif key == 'r' or key == 'R':
-                if self.messages:
-                    self.reply_mode = True
-                    self.set_status("Select message to reply (use arrows, press Enter to select)")
+                if self.messages and self.current_message_index < len(self.messages):
+                    message = self.messages[self.current_message_index]
+                    if not message.out:
+                        self.reply_to_message = message
+                        self.reply_mode = True
+                        self.set_status(f"Replying to message from {self.get_sender_name(message)}", 'status')
+                        self.show_input("Reply: ", self.send_message)
+                    else:
+                        self.set_status("You can't reply to your own messages", 'error')
+            elif key == 'e' or key == 'E':
+                if self.messages and self.current_message_index < len(self.messages):
+                    message = self.messages[self.current_message_index]
+                    if message.out:
+                        self.edit_message = message
+                        self.edit_mode = True
+                        self.set_status(f"Editing message: {message.text[:50] if message.text else '[Media]'}", 'status')
+                        self.show_input("Edit message: ", self.send_message)
+                    else:
+                        self.set_status("You can only edit your own messages", 'error')
             elif key == 's' or key == 'S':
                 self.show_settings()
             elif key == '/' or key == '?':
@@ -1421,12 +1531,18 @@ class LinuxGramTUI:
             elif key == 'esc':
                 if self.reply_mode:
                     self.reply_mode = False
+                    self.reply_to_message = None
                     self.set_status("Reply mode cancelled")
+                elif self.edit_mode:
+                    self.edit_mode = False
+                    self.edit_message = None
+                    self.set_status("Edit mode cancelled")
 
     def show_settings(self):
         self.in_settings = True
         self.settings_widget = SettingsWidget(self)
         self.frame.body = self.settings_widget
+        self.refresh_ui()
 
     def close_settings(self):
         self.in_settings = False
@@ -1434,10 +1550,14 @@ class LinuxGramTUI:
             self.frame.body = urwid.AttrMap(self.dialog_listbox, 'body')
         else:
             self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
+        self.refresh_ui()
 
     def exit_app(self):
         if self.urwid_loop:
-            raise urwid.ExitMainLoop()
+            try:
+                self.urwid_loop.stop()
+            except:
+                pass
 
         if self.client and self.client.is_connected():
             async def disconnect():
@@ -1460,32 +1580,38 @@ class LinuxGramTUI:
                     sender_name = sender.first_name if sender else "Unknown"
                     self.set_status(f"New message from {sender_name}", 'success')
 
-                    if self.view_mode == "dialogs":
-                        self.loop.create_task(self.load_dialogs_async())
-                    elif self.view_mode == "messages" and self.current_dialog:
-                        try:
-                            if event.chat_id == self.current_dialog.entity.id:
-                                await self.load_messages(self.current_dialog)
-                        except:
-                            pass
+            if self.view_mode == "dialogs":
+                self.loop.create_task(self.load_dialogs_async())
+            elif self.view_mode == "messages" and self.current_dialog:
+                try:
+                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
+                        await self.load_messages(self.current_dialog, keep_position=True)
+                except:
+                    pass
         except Exception as e:
             print(f"Error in new message handler: {e}")
 
     async def handler_message_edited(self, event):
         try:
             if self.view_mode == "messages" and self.current_dialog:
-                if event.chat_id == self.current_dialog.entity.id:
-                    await self.load_messages(self.current_dialog)
-        except:
-            pass
+                try:
+                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
+                        await self.load_messages(self.current_dialog, keep_position=True)
+                except:
+                    pass
+        except Exception as e:
+            print(f"Error in edited message handler: {e}")
 
     async def handler_message_deleted(self, event):
         try:
             if self.view_mode == "messages" and self.current_dialog:
-                if event.chat_id == self.current_dialog.entity.id:
-                    await self.load_messages(self.current_dialog)
-        except:
-            pass
+                try:
+                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
+                        await self.load_messages(self.current_dialog, keep_position=True)
+                except:
+                    pass
+        except Exception as e:
+            print(f"Error in deleted message handler: {e}")
 
 def main():
     global config
