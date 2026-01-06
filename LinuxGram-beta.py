@@ -7,17 +7,20 @@
 #####################################################################################
 # beta is linuxgram!  #
 #######################
-__version__ = '1.0.025'
+__version__ = '1.0.029-alt'
+
 import asyncio
 import os
 import json
 import sys
 import importlib.util
 import mimetypes
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from telethon import TelegramClient, events, functions, errors
 from telethon.tl import types
+from telethon.tl.functions.messages import SendReactionRequest
 import urwid
 
 SESSION_FILE = 'linuxgram.session'
@@ -31,13 +34,55 @@ config = {}
 loaded_plugins = []
 plugin_handlers = {}
 
+DEFAULT_THEMES = {
+    "default": [
+        ('header', 'white', 'black'),
+        ('footer', 'white', 'black'),
+        ('selected', 'white', 'dark blue'),
+        ('dialog_name', 'white', ''),
+        ('status', 'yellow', 'black'),
+        ('title', 'bold', ''),
+        ('button', 'white', ''),
+        ('input', 'white', 'dark blue'),
+        ('error', 'white', 'dark red'),
+        ('success', 'white', 'dark green'),
+        ('reaction', 'light cyan', ''),
+    ],
+    "dark": [
+        ('header', 'white', 'dark gray'),
+        ('footer', 'white', 'dark gray'),
+        ('selected', 'white', 'dark magenta'),
+        ('dialog_name', 'white', ''),
+        ('status', 'yellow', 'dark gray'),
+        ('title', 'bold', ''),
+        ('button', 'white', ''),
+        ('input', 'white', 'dark magenta'),
+        ('error', 'white', 'dark red'),
+        ('success', 'white', 'dark green'),
+        ('reaction', 'light cyan', ''),
+    ],
+    "blue": [
+        ('header', 'white', 'dark blue'),
+        ('footer', 'white', 'dark blue'),
+        ('selected', 'white', 'light blue'),
+        ('dialog_name', 'white', ''),
+        ('status', 'yellow', 'dark blue'),
+        ('title', 'bold', ''),
+        ('button', 'white', ''),
+        ('input', 'white', 'light blue'),
+        ('error', 'white', 'dark red'),
+        ('success', 'white', 'dark green'),
+        ('reaction', 'light cyan', ''),
+    ]
+}
+
 def load_config():
     default_config = {
         "privacy": {"last_seen": "everybody", "read_receipts": True},
         "notifications": {"private_chats": True, "groups": True, "channels": False},
         "data": {"auto_download": {"photos": True, "videos": False, "files": False, "voice_messages": True}},
         "language": "English",
-        "interface": {"dialogs_limit": 100, "messages_limit": 50, "show_avatars": False}
+        "interface": {"dialogs_limit": 100, "messages_limit": 50, "show_avatars": False, "theme": "default"}
     }
     try:
         with open(CONFIG_FILE, 'r') as f:
@@ -283,12 +328,13 @@ class LoginWidget(urwid.WidgetWrap):
         self.parent.exit_app()
 
 class MessageWidget(urwid.WidgetWrap):
-    def __init__(self, message, is_selected=False, is_outgoing=False, reply_text="", sender_name=""):
+    def __init__(self, message, is_selected=False, is_outgoing=False, reply_text="", sender_name="", reactions=None):
         self.message = message
         self.is_selected = is_selected
         self.is_outgoing = is_outgoing
         self.reply_text = reply_text
         self.sender_name = sender_name
+        self.reactions = reactions or {}
 
         self.text_widget = urwid.Text("")
         super().__init__(self.build_widget())
@@ -301,33 +347,46 @@ class MessageWidget(urwid.WidgetWrap):
         else:
             sender_display = ""
 
+        content_lines = []
         if self.message.text:
-            content = self.message.text
-        elif self.message.media:
-            if self.message.photo:
-                content = "📷 Photo"
-            elif self.message.video:
-                content = "🎥 Video"
-            elif self.message.voice:
-                content = "🎤 Voice message"
-            elif self.message.document:
-                content = "📄 Document"
-            elif self.message.audio:
-                content = "🎵 Audio"
-            elif self.message.sticker:
-                content = "😀 Sticker"
+            wrapped_text = textwrap.wrap(self.message.text, width=80)
+            if len(wrapped_text) > 3:
+                content = wrapped_text[0] + " ..."
             else:
-                content = "[Media]"
-        else:
-            content = "[Empty]"
+                content = " ".join(wrapped_text)
+            content_lines.append(content)
 
-        if len(content) > 60:
-            content = content[:57] + "..."
+        media_type = None
+        if self.message.media:
+            if self.message.photo:
+                media_type = "📷 Photo"
+            elif self.message.video:
+                media_type = "🎥 Video"
+            elif self.message.voice:
+                media_type = "🎤 Voice message"
+            elif self.message.document:
+                media_type = "📄 Document"
+            elif self.message.audio:
+                media_type = "🎵 Audio"
+            elif self.message.sticker:
+                media_type = "😀 Sticker"
+            else:
+                media_type = "[Media]"
+
+            if media_type:
+                content_lines.append(media_type)
+
+        if not content_lines:
+            content_lines.append("[Empty]")
+
+        content = " | ".join(content_lines)
+        if len(content) > 120:
+            content = content[:117] + "..."
 
         reply_indicator = ""
         if self.reply_text:
-            if len(self.reply_text) > 20:
-                preview = self.reply_text[:17] + "..."
+            if len(self.reply_text) > 30:
+                preview = self.reply_text[:27] + "..."
             else:
                 preview = self.reply_text
             reply_indicator = f" [↩ {preview}]"
@@ -339,7 +398,18 @@ class MessageWidget(urwid.WidgetWrap):
 
         line = f"{prefix}[{time_str}] {sender_display}: {content}{reply_indicator}"
 
-        self.text_widget.set_text(line)
+        reaction_text = ""
+        if self.reactions:
+            reactions_display = []
+            for emoji, count in self.reactions.items():
+                if count > 1:
+                    reactions_display.append(f"{emoji} {count}")
+                else:
+                    reactions_display.append(emoji)
+            if reactions_display:
+                reaction_text = "\n  " + " ".join(reactions_display)
+
+        self.text_widget.set_text(line + reaction_text)
 
         if self.is_selected:
             return urwid.AttrMap(self.text_widget, 'selected')
@@ -407,6 +477,8 @@ class SettingsWidget(urwid.WidgetWrap):
         self.voice = urwid.CheckBox("Voice messages",
                                    state=config['data']['auto_download']['voice_messages'])
 
+        self.theme_combo = urwid.Edit("Theme (default/dark/blue): ", config.get("interface", {}).get("theme", "default"))
+
         self.save_button = urwid.Button("Save")
         urwid.connect_signal(self.save_button, 'click', self.save_settings)
 
@@ -427,6 +499,9 @@ class SettingsWidget(urwid.WidgetWrap):
             self.files,
             self.voice,
             urwid.Divider(),
+            urwid.Text("Theme:", align='left'),
+            self.theme_combo,
+            urwid.Divider(),
             urwid.Columns([
                 ('weight', 1, urwid.AttrMap(self.save_button, 'button')),
                 ('weight', 1, urwid.AttrMap(self.cancel_button, 'button'))
@@ -444,6 +519,9 @@ class SettingsWidget(urwid.WidgetWrap):
         config['data']['auto_download']['videos'] = self.videos.state
         config['data']['auto_download']['files'] = self.files.state
         config['data']['auto_download']['voice_messages'] = self.voice.state
+
+        config['interface']['theme'] = self.theme_combo.get_edit_text().strip()
+        self.parent.apply_theme(config['interface']['theme'])
 
         save_config()
         self.parent.close_settings()
@@ -507,6 +585,46 @@ class SearchWidget(urwid.WidgetWrap):
         self.parent.close_search()
         self.parent.refresh_ui()
 
+class ReactionPickerWidget(urwid.WidgetWrap):
+    def __init__(self, parent, message):
+        self.parent = parent
+        self.message = message
+
+        self.reactions = ['👍', '👎', '❤️', '🔥', '🥰', '👏', '😁', '🤔', '🤯', '😱', '🤬', '😢', '🎉', '🤩', '🤮', '💩', '🙏', '👌', '🕊', '🤡', '🥱', '🥴', '😍', '🐳', '❤️‍🔥', '🌚', '🌭', '💯', '🤣', '⚡️', '🍌', '🏆', '💔', '🤨', '😐', '🍓', '🍾', '💋', '🖕', '😈', '😴', '😭', '🤓', '👻', '👨‍💻', '👀', '🎃', '🙈', '😇', '😨', '🤝', '✍️', '🤗', '🫡', '🎅', '🎄', '☃️', '💅', '🤪', '🗿', '🆒', '💘', '🙉', '🦄', '😘', '💊', '🙊', '😎', '👾', '🤷‍♂️', '🤷', '🤷‍♀️', '😡']
+
+        self.list_walker = urwid.SimpleFocusListWalker([])
+        self.listbox = urwid.ListBox(self.list_walker)
+
+        header = urwid.Text("Select reaction", align='center')
+        footer = urwid.Text("Press Esc to cancel", align='center')
+
+        frame = urwid.Frame(
+            header=urwid.AttrMap(header, 'header'),
+            body=urwid.AttrMap(self.listbox, 'body'),
+            footer=urwid.AttrMap(footer, 'footer')
+        )
+
+        super().__init__(frame)
+
+        self.load_reactions()
+
+    def load_reactions(self):
+        self.list_walker.clear()
+        for reaction in self.reactions:
+            button = urwid.Button(reaction)
+            urwid.connect_signal(button, 'click', lambda button, r=reaction: self.select_reaction(r))
+            self.list_walker.append(urwid.AttrMap(button, 'dialog_name'))
+
+    def select_reaction(self, reaction):
+        self.parent.loop.create_task(self.parent.send_reaction(self.message, reaction))
+        self.parent.close_reaction_picker()
+
+    def keypress(self, size, key):
+        if key == 'esc':
+            self.parent.close_reaction_picker()
+            return None
+        return super().keypress(size, key)
+
 class FileBrowserWidget(urwid.WidgetWrap):
     def __init__(self, parent, callback):
         self.parent = parent
@@ -564,10 +682,11 @@ class FileBrowserWidget(urwid.WidgetWrap):
             files = []
 
             for item in self.current_dir.iterdir():
-                if item.is_dir():
-                    dirs.append(item)
-                else:
-                    files.append(item)
+                if not item.name.startswith('.'):
+                    if item.is_dir():
+                        dirs.append(item)
+                    else:
+                        files.append(item)
 
             dirs.sort(key=lambda x: x.name.lower())
             files.sort(key=lambda x: x.name.lower())
@@ -611,17 +730,12 @@ class FileBrowserWidget(urwid.WidgetWrap):
 
     def select_item(self, file_path):
         self.selected_file = file_path
-        for i, item in enumerate(self.file_list):
-            if hasattr(item, 'original_widget') and item.original_widget.label == f"📄 {file_path.name}":
-                if self.listbox.body:
-                    self.listbox.set_focus(i)
-                    self.parent.refresh_ui()
-                break
+        self.parent.refresh_ui()
 
     def select_file(self, button):
         if self.selected_file:
-            self.callback(str(self.selected_file))
-            self.parent.close_file_browser()
+            self.parent.file_to_send = str(self.selected_file)
+            self.parent.show_input("Caption (optional): ", self.parent.send_file_with_caption)
         else:
             self.parent.set_status("Please select a file first", 'error')
             self.parent.refresh_ui()
@@ -654,6 +768,7 @@ class HelpWidget(urwid.WidgetWrap):
             "  D - Download media",
             "  / - Search messages",
             "  E - Edit message",
+            "  T - Add reaction",
             "  S - Settings",
             "",
             "SEARCH:",
@@ -664,6 +779,10 @@ class HelpWidget(urwid.WidgetWrap):
             "  ↑↓ - Navigate files",
             "  Enter - Select folder/file",
             "  Esc - Cancel",
+            "",
+            "REACTIONS:",
+            "  T - Open reaction picker",
+            "  Esc - Close reaction picker",
             "",
             "Press any key to close"
         ]
@@ -676,18 +795,8 @@ class HelpWidget(urwid.WidgetWrap):
 
 class LinuxGramTUI:
     def __init__(self):
-        self.palette = [
-            ('header', 'white', 'black'),
-            ('footer', 'white', 'black'),
-            ('selected', 'white', 'dark blue'),
-            ('dialog_name', 'white', ''),
-            ('status', 'yellow', 'black'),
-            ('title', 'bold', ''),
-            ('button', 'white', ''),
-            ('input', 'white', 'dark blue'),
-            ('error', 'white', 'dark red'),
-            ('success', 'white', 'dark green'),
-        ]
+        theme_name = config.get("interface", {}).get("theme", "default")
+        self.palette = DEFAULT_THEMES.get(theme_name, DEFAULT_THEMES["default"])
 
         self.dialogs = []
         self.filtered_dialogs = []
@@ -711,6 +820,7 @@ class LinuxGramTUI:
         self.in_settings = False
         self.in_search = False
         self.in_file_browser = False
+        self.in_reaction_picker = False
         self.show_help = False
         self.member_count = None
         self.online_count = None
@@ -727,6 +837,7 @@ class LinuxGramTUI:
         self.client = None
         self.loop = None
         self.typing_status = False
+        self.file_to_send = None
 
         self.title = urwid.Text(f"LinuxGram Beta v{__version__}", align='center')
         self.header = urwid.Text("Dialogs")
@@ -739,7 +850,7 @@ class LinuxGramTUI:
 
         self.full_help_text = (
             "Q: Quit | ↑↓: Select | Enter: Open | ←: Back | R: Reply | "
-            "F: File | D: Download | /: Search | S: Settings | C: Search | E: Edit | L: Plugins"
+            "F: File | D: Download | /: Search | S: Settings | C: Search | E: Edit | L: Plugins | T: Reaction"
         )
         self.full_help = urwid.Text(self.full_help_text)
 
@@ -960,7 +1071,7 @@ class LinuxGramTUI:
             except Exception:
                 continue
 
-    async def load_messages(self, dialog, keep_position=False):
+    async def load_messages(self, dialog, keep_position=False, focus_on_bottom=False):
         try:
             old_focus_position = None
             old_message_id = None
@@ -994,6 +1105,15 @@ class LinuxGramTUI:
                         else:
                             msg.reply_text = "[Media]"
 
+                if hasattr(msg, 'reactions') and msg.reactions:
+                    reactions_dict = {}
+                    for reaction in msg.reactions.results:
+                        if hasattr(reaction.reaction, 'emoticon'):
+                            emoji = reaction.reaction.emoticon
+                            count = reaction.count
+                            reactions_dict[emoji] = count
+                    msg.reactions_dict = reactions_dict
+
             self.refresh_message_list()
 
             self.view_mode = "messages"
@@ -1011,7 +1131,10 @@ class LinuxGramTUI:
             self.set_status(f"Loaded {len(self.messages)} messages", 'success')
 
             if self.messages:
-                if keep_position and old_message_id:
+                if focus_on_bottom:
+                    self.current_message_index = len(self.messages) - 1
+                    self.message_list.set_focus(self.current_message_index)
+                elif keep_position and old_message_id:
                     for i, msg in enumerate(self.messages):
                         if msg.id == old_message_id:
                             self.current_message_index = i
@@ -1060,7 +1183,7 @@ class LinuxGramTUI:
         self.current_dialog_index = index
         self.refresh_dialog_list()
 
-        self.loop.create_task(self.load_messages(dialog, keep_position=False))
+        self.loop.create_task(self.load_messages(dialog, keep_position=False, focus_on_bottom=True))
 
     def refresh_dialog_list(self):
         self.dialog_list.clear()
@@ -1101,13 +1224,15 @@ class LinuxGramTUI:
         for i, msg in enumerate(self.messages):
             reply_text = getattr(msg, 'reply_text', "")
             sender_name = self.get_sender_name(msg)
+            reactions = getattr(msg, 'reactions_dict', {})
 
             widget = MessageWidget(
                 msg,
                 is_selected=(i == self.current_message_index),
                 is_outgoing=msg.out,
                 reply_text=reply_text,
-                sender_name=sender_name
+                sender_name=sender_name,
+                reactions=reactions
             )
             self.message_list.append(widget)
             self.message_widgets.append(widget)
@@ -1129,6 +1254,18 @@ class LinuxGramTUI:
         self.refresh_ui()
 
     def show_input(self, prompt, callback):
+        async def start_typing():
+            try:
+                await self.client(functions.messages.SetTypingRequest(
+                    peer=self.current_dialog.entity,
+                    action=types.SendMessageTypingAction()
+                ))
+            except Exception as e:
+                print(f"Typing error: {e}")
+
+        if self.current_dialog:
+            self.loop.create_task(start_typing())
+
         self.input_mode = True
         self.input_prompt = prompt
         self.input_callback = callback
@@ -1138,6 +1275,18 @@ class LinuxGramTUI:
         self.refresh_ui()
 
     def hide_input(self):
+        async def stop_typing():
+            try:
+                await self.client(functions.messages.SetTypingRequest(
+                    peer=self.current_dialog.entity,
+                    action=types.SendMessageCancelAction()
+                ))
+            except Exception as e:
+                print(f"Stop typing error: {e}")
+
+        if self.current_dialog:
+            self.loop.create_task(stop_typing())
+
         self.input_mode = False
         self.frame.footer = urwid.AttrMap(self.footer_widget, 'footer')
         self.input_callback = None
@@ -1157,9 +1306,21 @@ class LinuxGramTUI:
             self.set_status("Input cancelled")
 
     async def send_message(self, text):
-        if not text.strip():
+        if not text.strip() and not self.edit_message:
             self.set_status("Message is empty", 'error')
             return
+
+        async def send_typing():
+            try:
+                await self.client(functions.messages.SetTypingRequest(
+                    peer=self.current_dialog.entity,
+                    action=types.SendMessageTypingAction()
+                ))
+                await asyncio.sleep(0.5)
+            except:
+                pass
+
+        self.loop.create_task(send_typing())
 
         try:
             if self.reply_to_message:
@@ -1180,33 +1341,46 @@ class LinuxGramTUI:
                 await self.client.send_message(self.current_dialog.entity, text)
                 self.set_status("Message sent", 'success')
 
-            await self.load_messages(self.current_dialog, keep_position=True)
+            await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=True)
         except Exception as e:
             self.set_status(f"Error: {e}", 'error')
             print(f"Send message error: {e}")
 
-    async def send_file(self, file_path):
-        if not file_path or not os.path.exists(file_path):
-            self.set_status(f"File not found: {file_path}", 'error')
+    async def send_file_with_caption(self, caption):
+        if not self.file_to_send:
+            self.set_status("No file selected", 'error')
             return
 
-        try:
-            file_size = os.path.getsize(file_path)
+        async def send_typing():
+            try:
+                await self.client(functions.messages.SetTypingRequest(
+                    peer=self.current_dialog.entity,
+                    action=types.SendMessageTypingAction()
+                ))
+                await asyncio.sleep(0.5)
+            except:
+                pass
 
-            mime_type, _ = mimetypes.guess_type(file_path)
+        self.loop.create_task(send_typing())
+
+        try:
+            file_size = os.path.getsize(self.file_to_send)
+
+            mime_type, _ = mimetypes.guess_type(self.file_to_send)
 
             if mime_type and mime_type.startswith('image/'):
-                self.set_status(f"Sending photo: {os.path.basename(file_path)}...", 'status')
-                await self.client.send_file(self.current_dialog.entity, file_path, caption="")
+                self.set_status(f"Sending photo: {os.path.basename(self.file_to_send)}...", 'status')
+                await self.client.send_file(self.current_dialog.entity, self.file_to_send, caption=caption)
             elif mime_type and mime_type.startswith('video/'):
-                self.set_status(f"Sending video: {os.path.basename(file_path)}...", 'status')
-                await self.client.send_file(self.current_dialog.entity, file_path, supports_streaming=True)
+                self.set_status(f"Sending video: {os.path.basename(self.file_to_send)}...", 'status')
+                await self.client.send_file(self.current_dialog.entity, self.file_to_send, supports_streaming=True, caption=caption)
             else:
-                self.set_status(f"Sending file: {os.path.basename(file_path)}...", 'status')
-                await self.client.send_file(self.current_dialog.entity, file_path)
+                self.set_status(f"Sending file: {os.path.basename(self.file_to_send)}...", 'status')
+                await self.client.send_file(self.current_dialog.entity, self.file_to_send, caption=caption)
 
-            await self.load_messages(self.current_dialog, keep_position=True)
-            self.set_status(f"File sent: {os.path.basename(file_path)}", 'success')
+            await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=True)
+            self.set_status(f"File sent: {os.path.basename(self.file_to_send)}", 'success')
+            self.file_to_send = None
 
         except Exception as e:
             self.set_status(f"Error sending file: {e}", 'error')
@@ -1262,9 +1436,36 @@ class LinuxGramTUI:
             self.set_status(f"Download error: {e}", 'error')
             print(f"Download error: {e}")
 
+    async def send_reaction(self, message, reaction):
+        try:
+            await self.client(SendReactionRequest(
+                peer=self.current_dialog.entity,
+                msg_id=message.id,
+                reaction=[types.ReactionEmoji(emoticon=reaction)]
+            ))
+            self.set_status(f"Reaction {reaction} sent", 'success')
+            await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=False)
+        except Exception as e:
+            self.set_status(f"Error sending reaction: {e}", 'error')
+            print(f"Reaction error: {e}")
+
+    def show_reaction_picker(self, message):
+        self.in_reaction_picker = True
+        self.reaction_picker = ReactionPickerWidget(self, message)
+        self.frame.body = self.reaction_picker
+        self.refresh_ui()
+
+    def close_reaction_picker(self):
+        self.in_reaction_picker = False
+        if self.view_mode == "dialogs":
+            self.frame.body = urwid.AttrMap(self.dialog_listbox, 'body')
+        else:
+            self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
+        self.refresh_ui()
+
     async def search_messages(self, query):
         if not query or not query.strip():
-            await self.load_messages(self.current_dialog, keep_position=False)
+            await self.load_messages(self.current_dialog, keep_position=False, focus_on_bottom=True)
             self.set_status("Search cleared", 'status')
             return
 
@@ -1374,7 +1575,7 @@ class LinuxGramTUI:
 
     def show_file_browser(self):
         self.in_file_browser = True
-        self.file_browser = FileBrowserWidget(self, self.send_file)
+        self.file_browser = FileBrowserWidget(self, self.send_file_with_caption)
         self.frame.body = self.file_browser
         self.refresh_ui()
 
@@ -1430,6 +1631,13 @@ class LinuxGramTUI:
             if key == 'esc':
                 self.close_file_browser()
                 self.set_status("File browser closed", 'status')
+                return
+            return
+
+        if self.in_reaction_picker:
+            if key == 'esc':
+                self.close_reaction_picker()
+                self.set_status("Reaction picker closed", 'status')
                 return
             return
 
@@ -1528,6 +1736,10 @@ class LinuxGramTUI:
                         self.set_status("No media in this message", 'error')
             elif key == 'f' or key == 'F':
                 self.show_file_browser()
+            elif key == 't' or key == 'T':
+                if self.messages and self.current_message_index < len(self.messages):
+                    message = self.messages[self.current_message_index]
+                    self.show_reaction_picker(message)
             elif key == 'esc':
                 if self.reply_mode:
                     self.reply_mode = False
@@ -1552,6 +1764,14 @@ class LinuxGramTUI:
             self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
         self.refresh_ui()
 
+    def apply_theme(self, theme_name):
+        if theme_name in DEFAULT_THEMES:
+            self.palette = DEFAULT_THEMES[theme_name]
+            if self.urwid_loop:
+                self.urwid_loop.screen.register_palette(self.palette)
+                self.title.set_text(f"LinuxGram Beta v{__version__}")
+                self.refresh_ui()
+
     def exit_app(self):
         if self.urwid_loop:
             try:
@@ -1574,6 +1794,14 @@ class LinuxGramTUI:
 
     async def handler_new_message(self, event):
         try:
+            chat_id = None
+            if hasattr(event.message.peer_id, 'channel_id'):
+                chat_id = event.message.peer_id.channel_id
+            elif hasattr(event.message.peer_id, 'chat_id'):
+                chat_id = event.message.peer_id.chat_id
+            elif hasattr(event.message.peer_id, 'user_id'):
+                chat_id = event.message.peer_id.user_id
+
             if event.is_private and not event.message.out:
                 if config.get("notifications", {}).get("private_chats", True):
                     sender = await event.get_sender()
@@ -1584,8 +1812,13 @@ class LinuxGramTUI:
                 self.loop.create_task(self.load_dialogs_async())
             elif self.view_mode == "messages" and self.current_dialog:
                 try:
-                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
-                        await self.load_messages(self.current_dialog, keep_position=True)
+                    current_chat_id = None
+                    if hasattr(self.current_dialog.entity, 'id'):
+                        current_chat_id = self.current_dialog.entity.id
+
+                    if chat_id == current_chat_id:
+                        at_bottom = self.current_message_index == len(self.messages) - 1 if self.messages else True
+                        await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=at_bottom)
                 except:
                     pass
         except Exception as e:
@@ -1593,10 +1826,23 @@ class LinuxGramTUI:
 
     async def handler_message_edited(self, event):
         try:
+            chat_id = None
+            if hasattr(event.message.peer_id, 'channel_id'):
+                chat_id = event.message.peer_id.channel_id
+            elif hasattr(event.message.peer_id, 'chat_id'):
+                chat_id = event.message.peer_id.chat_id
+            elif hasattr(event.message.peer_id, 'user_id'):
+                chat_id = event.message.peer_id.user_id
+
             if self.view_mode == "messages" and self.current_dialog:
                 try:
-                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
-                        await self.load_messages(self.current_dialog, keep_position=True)
+                    current_chat_id = None
+                    if hasattr(self.current_dialog.entity, 'id'):
+                        current_chat_id = self.current_dialog.entity.id
+
+                    if chat_id == current_chat_id:
+                        at_bottom = self.current_message_index == len(self.messages) - 1 if self.messages else True
+                        await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=at_bottom)
                 except:
                     pass
         except Exception as e:
@@ -1604,10 +1850,19 @@ class LinuxGramTUI:
 
     async def handler_message_deleted(self, event):
         try:
+            chat_ids = []
+            for chat_id in event.deleted_ids:
+                chat_ids.append(chat_id)
+
             if self.view_mode == "messages" and self.current_dialog:
                 try:
-                    if hasattr(event, 'chat_id') and event.chat_id == self.current_dialog.entity.id:
-                        await self.load_messages(self.current_dialog, keep_position=True)
+                    current_chat_id = None
+                    if hasattr(self.current_dialog.entity, 'id'):
+                        current_chat_id = self.current_dialog.entity.id
+
+                    if current_chat_id in chat_ids:
+                        at_bottom = self.current_message_index == len(self.messages) - 1 if self.messages else True
+                        await self.load_messages(self.current_dialog, keep_position=True, focus_on_bottom=at_bottom)
                 except:
                     pass
         except Exception as e:
