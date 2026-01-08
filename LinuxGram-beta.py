@@ -7,7 +7,8 @@
 #####################################################################################
 # beta is linuxgram!  #
 #######################
-__version__ = '1.0.033-alt-test'
+__version__ = '1.0.035-alt-test'
+
 
 import asyncio
 import os
@@ -36,6 +37,8 @@ client = None
 config = {}
 loaded_plugins = []
 plugin_handlers = {}
+plugin_command_handlers = {}
+plugin_settings_widgets = {}
 
 DEFAULT_THEMES = {
     "default": [
@@ -161,6 +164,8 @@ def load_plugins():
 
     loaded_plugins.clear()
     plugin_handlers.clear()
+    plugin_command_handlers.clear()
+    plugin_settings_widgets.clear()
 
     sys.path.insert(0, PLUGINS_DIR)
 
@@ -183,7 +188,14 @@ def load_plugins():
                 if hasattr(plugin_module, 'register_hooks'):
                     handlers = plugin_module.register_hooks()
                     if handlers:
-                        plugin_handlers[plugin_name] = handlers
+                        if 'hooks' in handlers:
+                            plugin_handlers[plugin_name] = handlers['hooks']
+                        if 'commands' in handlers:
+                            for command, handler in handlers['commands'].items():
+                                plugin_command_handlers[command] = (plugin_name, handler)
+                        if 'settings_widget' in handlers:
+                            plugin_settings_widgets[plugin_name] = handlers['settings_widget']
+
                         print(f"✓ Plugin loaded: {plugin_info['name']} v{plugin_info['version']} by {plugin_info['author']}")
                     else:
                         print(f"⚠ Plugin {plugin_name} returned no handlers")
@@ -208,6 +220,20 @@ def execute_plugin_hook(hook_name, *args, **kwargs):
                 print(f"Error executing hook '{hook_name}' in plugin {plugin_name}: {e}")
                 traceback.print_exc()
     return results
+
+def execute_plugin_command(command, text, dialog, tui):
+    if command in plugin_command_handlers:
+        plugin_name, handler = plugin_command_handlers[command]
+        plugin_config = config.get("plugins", {}).get(plugin_name, {})
+        if not plugin_config.get('enabled', True):
+            return None
+
+        try:
+            return handler(text, dialog, tui)
+        except Exception as e:
+            print(f"Error executing command '{command}' in plugin {plugin_name}: {e}")
+            traceback.print_exc()
+    return None
 
 class LoginWidget(urwid.WidgetWrap):
     def __init__(self, parent):
@@ -525,6 +551,9 @@ class SettingsWidget(urwid.WidgetWrap):
         self.theme_combo = urwid.Edit("Theme (default/dark/blue): ", config.get("interface", {}).get("theme", "default"))
         self.layout_combo = urwid.Edit("Keyboard layout (en/ru): ", config.get("interface", {}).get("keyboard_layout", "en"))
 
+        self.plugins_button = urwid.Button("Plugin Manager")
+        urwid.connect_signal(self.plugins_button, 'click', self.open_plugin_manager)
+
         self.save_button = urwid.Button("Save")
         urwid.connect_signal(self.save_button, 'click', self.save_settings)
 
@@ -549,6 +578,8 @@ class SettingsWidget(urwid.WidgetWrap):
             self.theme_combo,
             urwid.Text("Keyboard layout:", align='left'),
             self.layout_combo,
+            urwid.Divider(),
+            urwid.AttrMap(self.plugins_button, 'button'),
             urwid.Divider(),
             urwid.Columns([
                 ('weight', 1, urwid.AttrMap(self.save_button, 'button')),
@@ -579,6 +610,9 @@ class SettingsWidget(urwid.WidgetWrap):
 
     def cancel_settings(self, button):
         self.parent.close_settings()
+
+    def open_plugin_manager(self, button):
+        self.parent.show_plugin_manager()
 
 class SearchWidget(urwid.WidgetWrap):
     def __init__(self, parent):
@@ -885,6 +919,130 @@ class TopicWidget(urwid.WidgetWrap):
         if self.callback:
             self.callback(self.index)
 
+class PluginSettingsWidget(urwid.WidgetWrap):
+    def __init__(self, parent, plugin_name, plugin_info):
+        self.parent = parent
+        self.plugin_name = plugin_name
+        self.plugin_info = plugin_info
+
+        self.enabled = config.get("plugins", {}).get(plugin_name, {}).get('enabled', True)
+
+        self.enable_button = urwid.Button("[X] Enabled" if self.enabled else "[ ] Enabled")
+        self.configure_button = urwid.Button("Configure")
+        self.back_button = urwid.Button("Back")
+
+        urwid.connect_signal(self.enable_button, 'click', self.toggle_enabled)
+        urwid.connect_signal(self.configure_button, 'click', self.configure)
+        urwid.connect_signal(self.back_button, 'click', self.back)
+
+        content = urwid.Pile([
+            urwid.Text(f"Plugin: {plugin_info.get('name', plugin_name)}", align='center'),
+            urwid.Divider(),
+            urwid.Text(f"Version: {plugin_info.get('version', '1.0')}"),
+            urwid.Text(f"Author: {plugin_info.get('author', 'Unknown')}"),
+            urwid.Divider(),
+            urwid.Text(f"Description: {plugin_info.get('description', '')}"),
+            urwid.Divider(),
+            urwid.AttrMap(self.enable_button, 'button'),
+            urwid.AttrMap(self.configure_button, 'button'),
+            urwid.Divider(),
+            urwid.AttrMap(self.back_button, 'button')
+        ])
+
+        super().__init__(urwid.Filler(content, 'top'))
+
+    def toggle_enabled(self, button):
+        self.enabled = not self.enabled
+        button.set_label("[X] Enabled" if self.enabled else "[ ] Enabled")
+
+        if "plugins" not in config:
+            config["plugins"] = {}
+        if self.plugin_name not in config["plugins"]:
+            config["plugins"][self.plugin_name] = {}
+        config["plugins"][self.plugin_name]['enabled'] = self.enabled
+        save_config()
+
+        status = "enabled" if self.enabled else "disabled"
+        self.parent.set_status(f"Plugin {status}", 'success')
+
+    def configure(self, button):
+        if self.plugin_name in plugin_settings_widgets:
+            widget_creator = plugin_settings_widgets[self.plugin_name]
+            plugin_config = get_plugin_config(self.plugin_name, {})
+
+            def save_plugin_config(new_config):
+                new_config['enabled'] = self.enabled
+                save_plugin_config(self.plugin_name, new_config)
+                self.parent.show_plugin_settings(self.plugin_name)
+
+            widget = widget_creator(self.parent, plugin_config, save_plugin_config)
+            self.parent.frame.body = widget
+            self.parent.in_plugin_settings = True
+            self.parent.current_plugin_settings = self.plugin_name
+        else:
+            self.parent.set_status("No configuration available for this plugin", 'error')
+
+    def back(self, button):
+        self.parent.show_plugin_manager()
+
+class PluginManagerWidget(urwid.WidgetWrap):
+    def __init__(self, parent):
+        self.parent = parent
+        self.plugin_list = urwid.SimpleFocusListWalker([])
+        self.listbox = urwid.ListBox(self.plugin_list)
+
+        self.back_button = urwid.Button("Back to Settings")
+        urwid.connect_signal(self.back_button, 'click', self.back)
+
+        header = urwid.Pile([
+            urwid.Text("Plugin Manager", align='center'),
+            urwid.Divider()
+        ])
+
+        footer = urwid.Pile([
+            urwid.Divider(),
+            urwid.AttrMap(self.back_button, 'button')
+        ])
+
+        content = urwid.Frame(
+            header=header,
+            body=urwid.AttrMap(self.listbox, 'body'),
+            footer=footer
+        )
+
+        super().__init__(content)
+        self.load_plugins()
+
+    def load_plugins(self):
+        self.plugin_list.clear()
+
+        if not loaded_plugins:
+            self.plugin_list.append(urwid.Text("No plugins loaded", align='center'))
+            return
+
+        for plugin_info in loaded_plugins:
+            plugin_name = plugin_info['name']
+            enabled = config.get("plugins", {}).get(plugin_name, {}).get('enabled', True)
+            status = "✓" if enabled else "✗"
+
+            button = urwid.Button(f"{status} {plugin_name} v{plugin_info['version']}")
+            urwid.connect_signal(button, 'click', lambda button, p=plugin_name, i=plugin_info: self.open_plugin(p, i))
+            self.plugin_list.append(urwid.AttrMap(button, 'dialog_name'))
+
+        self.parent.refresh_ui()
+
+    def open_plugin(self, plugin_name, plugin_info):
+        self.parent.show_plugin_settings(plugin_name, plugin_info)
+
+    def back(self, button):
+        self.parent.close_plugin_manager()
+
+    def keypress(self, size, key):
+        if key == 'esc':
+            self.parent.close_plugin_manager()
+            return None
+        return super().keypress(size, key)
+
 class LinuxGramTUI:
     def __init__(self):
         theme_name = config.get("interface", {}).get("theme", "default")
@@ -918,6 +1076,9 @@ class LinuxGramTUI:
         self.in_search = False
         self.in_file_browser = False
         self.in_reaction_picker = False
+        self.in_plugin_manager = False
+        self.in_plugin_settings = False
+        self.current_plugin_settings = None
         self.show_help = False
         self.member_count = None
         self.online_count = None
@@ -939,7 +1100,7 @@ class LinuxGramTUI:
         self.file_to_send = None
         self.files_to_send = []
 
-        self.title = urwid.Text(f"LinuxGram Beta v{__version__}", align='center')
+        self.title = urwid.Text(f"LinuxGram Beta", align='center')
         self.header = urwid.Text("Dialogs")
 
         self.footer_help_text = "Enter... | H: help | L: reload plugins"
@@ -989,11 +1150,9 @@ class LinuxGramTUI:
 
         self.urwid_loop = None
 
-        # Создаем папку для конфигурации плагинов
         if not os.path.exists(PLUGINS_CONFIG_DIR):
             os.makedirs(PLUGINS_CONFIG_DIR)
 
-        # Инициализация плагинов
         load_plugins()
         execute_plugin_hook('on_tui_init', self)
 
@@ -1523,7 +1682,12 @@ class LinuxGramTUI:
         if key == 'enter':
             text = self.input_edit.get_edit_text()
 
-            # Обработка плагинами перед отправкой
+            words = text.split()
+            if words and words[0] in plugin_command_handlers:
+                result = execute_plugin_command(words[0], text, self.current_dialog, self)
+                if result is not None:
+                    text = result
+
             plugin_results = execute_plugin_hook('process_message_before_send', text, self.current_dialog, self)
             for _, new_text in plugin_results:
                 if new_text is not None:
@@ -1853,6 +2017,37 @@ class LinuxGramTUI:
             self.frame.body = urwid.AttrMap(self.message_listbox, 'body')
         self.refresh_ui()
 
+    def show_plugin_manager(self):
+        self.in_plugin_manager = True
+        self.plugin_manager = PluginManagerWidget(self)
+        self.frame.body = self.plugin_manager
+        self.refresh_ui()
+
+    def close_plugin_manager(self):
+        self.in_plugin_manager = False
+        self.in_plugin_settings = False
+        self.frame.body = urwid.AttrMap(self.dialog_listbox, 'body')
+        self.view_mode = "dialogs"
+        self.header.set_text("Dialogs")
+        self.refresh_ui()
+
+    def show_plugin_settings(self, plugin_name, plugin_info=None):
+        if plugin_info is None:
+            for p in loaded_plugins:
+                if p['name'] == plugin_name:
+                    plugin_info = p
+                    break
+
+        if plugin_info:
+            self.in_plugin_settings = True
+            self.current_plugin_settings = plugin_name
+            widget = PluginSettingsWidget(self, plugin_name, plugin_info)
+            self.frame.body = widget
+            self.refresh_ui()
+        else:
+            self.set_status(f"Plugin {plugin_name} not found", 'error')
+            self.show_plugin_manager()
+
     def handle_keypress(self, key):
         if not self.input_mode and isinstance(key, str) and len(key) == 1:
             key = self.convert_key_for_layout(key)
@@ -1886,6 +2081,9 @@ class LinuxGramTUI:
                 self.close_reaction_picker()
                 self.set_status("Reaction picker closed", 'status')
                 return
+            return
+
+        if self.in_plugin_manager or self.in_plugin_settings:
             return
 
         if self.show_help:
