@@ -1,0 +1,25 @@
+__pycache__/*
+
+# Directories
+build
+dist
+
+# Temporary
+*.pyc
+*.DS_Store
+
+# Vim
+*.swp
+*.swo
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# session
+*.session
+plugins/*
+*.cache
+*.db
+*.json
+
